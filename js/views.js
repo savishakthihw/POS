@@ -5678,6 +5678,46 @@ var views = window.views = {
                     </div>
                 </div>
             </div>
+
+            <!-- Cloud Sync & Migration (NEW) - Admin Only -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ${app.isAdmin ? '' : 'hidden'}">
+                <div class="p-6 border-b border-gray-50 flex items-center gap-4 bg-gradient-to-r from-blue-50 to-white">
+                    <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl shadow-sm">
+                        <i class="fa-solid fa-cloud"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">Cloud Sync & Web Access</h3>
+                        <p class="text-xs text-gray-500">Sync your local data with the web version (Firebase)</p>
+                    </div>
+                </div>
+
+                <div class="p-8">
+                    <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-4 mb-6 flex gap-4 items-start">
+                        <i class="fa-solid fa-circle-info text-blue-500 mt-1 text-lg"></i>
+                        <div class="text-sm text-blue-800">
+                            <p class="font-bold">First Time Sync</p>
+                            <p class="leading-relaxed">
+                                Use <b>"Push All to Cloud"</b> once from this PC to upload your current data. 
+                                After that, all new transactions will sync automatically.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <button onclick="SyncService.pushAll()" class="group relative overflow-hidden bg-white border-2 border-blue-100 hover:border-blue-300 rounded-2xl p-6 text-left transition-all hover:shadow-lg">
+                            <i class="fa-solid fa-cloud-arrow-up text-3xl text-blue-400 mb-4"></i>
+                            <h4 class="font-bold text-gray-800 mb-1">Push All to Cloud</h4>
+                            <p class="text-xs text-gray-500">Upload all local items and history to Firebase.</p>
+                        </button>
+
+                        <button onclick="SyncService.pullAll()" class="group relative overflow-hidden bg-white border-2 border-indigo-100 hover:border-indigo-300 rounded-2xl p-6 text-left transition-all hover:shadow-lg">
+                            <i class="fa-solid fa-cloud-arrow-down text-3xl text-indigo-400 mb-4"></i>
+                            <h4 class="font-bold text-gray-800 mb-1">Pull All from Cloud</h4>
+                            <p class="text-xs text-gray-500">Overwrite local data with cloud data (Use on new devices).</p>
+                        </button>
+                    </div>
+                </div>
+            </div>
             
             <!-- 1.5 Data Safety & Protection (NEW) - Admin Only -->
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ${app.isAdmin ? '' : 'hidden'}">
@@ -5806,6 +5846,13 @@ var views = window.views = {
                                 <i class="fa-solid fa-box-archive"></i> Archive Data
                             </button>
                             <p class="text-[10px] text-gray-400">Archives old sales & purchases to speed up the system.</p>
+                        </div>
+
+                        <div class="flex flex-col gap-2">
+                            <button id="btn-test-cloud" onclick="views.testCloudConnection()" class="px-6 py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold rounded-xl transition-all flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-cloud"></i> Test Cloud Connection
+                            </button>
+                            <p class="text-[10px] text-gray-400">Verifies connectivity with Firebase Firestore database.</p>
                         </div>
                     </div>
                 </div>
@@ -6318,6 +6365,53 @@ var views = window.views = {
 
         } catch (err) {
             resultsEl.innerHTML = `<div class="text-red-500 text-xs font-bold p-2 bg-red-50 rounded">Diagnostic failed: ${err.message}</div>`;
+        }
+    },
+    
+    testCloudConnection: async () => {
+        const btn = document.getElementById('btn-test-cloud');
+        if (!btn) return;
+        
+        const originalContent = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Connecting...`;
+        
+        try {
+            if (!firestore) {
+                throw new Error("Firebase not initialized. Check your config.");
+            }
+            
+            // Try to write a small test document
+            const testDoc = firestore.collection('_connectivity_test').doc('ping');
+            await testDoc.set({
+                lastTest: new Date().toISOString(),
+                status: 'OK',
+                client: 'POS-PC'
+            });
+            
+            // Try to read it back
+            const snap = await testDoc.get();
+            if (snap.exists && snap.data().status === 'OK') {
+                utils.showNotification('Cloud Connection OK! System is syncing.', 'success');
+                btn.classList.remove('bg-blue-50', 'text-blue-700');
+                btn.classList.add('bg-emerald-50', 'text-emerald-700');
+                btn.innerHTML = `<i class="fa-solid fa-check-circle"></i> Connection Perfect`;
+            } else {
+                throw new Error("Could not verify test data.");
+            }
+        } catch (err) {
+            console.error("Cloud Test Failed:", err);
+            utils.showNotification('Cloud Connection Failed! ' + err.message, 'error');
+            btn.classList.remove('bg-blue-50', 'text-blue-700');
+            btn.classList.add('bg-red-50', 'text-red-700');
+            btn.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Connection Failed`;
+        } finally {
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+                btn.classList.remove('bg-emerald-50', 'text-emerald-700', 'bg-red-50', 'text-red-700');
+                btn.classList.add('bg-blue-50', 'text-blue-700');
+            }, 5000);
         }
     },
 
