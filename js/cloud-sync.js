@@ -32,24 +32,47 @@ window.cloudSync = {
         if (!cloudSync.verifyAccess()) return;
         if (cloudSync.isSyncing) return;
         cloudSync.isSyncing = true;
-        utils.showNotification('Syncing to Cloud...', 'info');
-
+        
         try {
+            utils.showNotification('Verifying cloud write access...', 'info');
+            // Test write to see if rules allow it
+            await cloudDB.collection('connection_test').doc('test').set({ 
+                last_test: new Date().toISOString(),
+                status: 'ready'
+            });
+            
+            utils.showNotification('Cloud access verified. Starting sync...', 'info');
+            
             for (const table of cloudSync.collections) {
+                // Show which table is syncing
+                utils.showNotification(`Syncing ${table}...`, 'info');
+                
                 const data = await db[table].toArray();
-                const batch = cloudDB.batch();
-                data.forEach(doc => {
-                    const docId = doc.id ? String(doc.id) : utils.generateId('SYNC');
-                    const docRef = cloudDB.collection(table).doc(docId);
-                    batch.set(docRef, doc);
-                });
-                await batch.commit();
-                console.log(`✅ Uploaded ${table}`);
+                if (data.length === 0) continue;
+
+                // Chunk data into batches of 500
+                const totalChunks = Math.ceil(data.length / 500);
+                for (let i = 0; i < data.length; i += 500) {
+                    const chunkNumber = Math.floor(i / 500) + 1;
+                    utils.showNotification(`Syncing ${table}: Part ${chunkNumber}/${totalChunks}...`, 'info');
+                    
+                    const chunk = data.slice(i, i + 500);
+                    const batch = cloudDB.batch();
+                    
+                    chunk.forEach(doc => {
+                        const docId = doc.id ? String(doc.id) : utils.generateId('SYNC');
+                        const docRef = cloudDB.collection(table).doc(docId);
+                        batch.set(docRef, doc);
+                    });
+                    
+                    await batch.commit();
+                }
+                console.log(`✅ Uploaded ${table} (${data.length} records)`);
             }
-            utils.showNotification('Cloud Backup Successful!', 'success');
+            utils.showNotification('✅ Cloud Upload Successful!', 'success');
         } catch (err) {
             console.error('Cloud Upload Failed:', err);
-            utils.showNotification('Cloud Sync Failed!', 'error');
+            utils.showNotification(`❌ Cloud Upload Failed: ${err.message}`, 'error');
         } finally {
             cloudSync.isSyncing = false;
         }
@@ -60,10 +83,11 @@ window.cloudSync = {
         if (!cloudSync.verifyAccess()) return;
         if (cloudSync.isSyncing) return;
         cloudSync.isSyncing = true;
-        utils.showNotification('Downloading Cloud Data...', 'info');
+        utils.showNotification('📥 Initializing Cloud Download...', 'info');
 
         try {
             for (const table of cloudSync.collections) {
+                utils.showNotification(`📥 Downloading ${table}...`, 'info');
                 const snapshot = await cloudDB.collection(table).get();
                 if (!snapshot.empty) {
                     const cloudData = snapshot.docs.map(doc => doc.data());
@@ -71,11 +95,16 @@ window.cloudSync = {
                     await db[table].bulkAdd(cloudData);
                 }
             }
-            utils.showNotification('Cloud Sync Download Successful!', 'success');
-            if (app.currentState) app.navigate(app.currentState);
+            utils.showNotification('✅ Cloud Download Successful!', 'success');
+            
+            // Reload page to reflect changes
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+
         } catch (err) {
             console.error('Cloud Download Failed:', err);
-            utils.showNotification('Sync Download Failed!', 'error');
+            utils.showNotification(`❌ Cloud Download Failed: ${err.message}`, 'error');
         } finally {
             cloudSync.isSyncing = false;
         }

@@ -38,17 +38,26 @@ const utils = {
     },
 
     // Show a toast notification
-    showNotification: (message, type = 'success') => {
+    showNotification: (message, type = 'success', duration = null) => {
         const div = document.createElement('div');
-        div.className = `fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white transform transition-all duration-300 translate-y-[-20px] opacity-0 flex items-center gap-2 ${type === 'success' ? 'bg-green-500' :
-            type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+        // If type is error, default duration is 0 (persistent)
+        const finalDuration = duration !== null ? duration : (type === 'error' ? 0 : 3000);
+
+        div.className = `fixed top-4 right-4 z-[9999] px-6 py-3 rounded-xl shadow-2xl text-white transform transition-all duration-300 translate-y-[-20px] opacity-0 flex items-center gap-3 min-w-[300px] max-w-md ${type === 'success' ? 'bg-emerald-600' :
+            type === 'error' ? 'bg-rose-600' : 'bg-indigo-600'
             }`;
 
-        const icon = type === 'success' ? '<i class="fa-solid fa-check-circle"></i>' :
-            type === 'error' ? '<i class="fa-solid fa-circle-exclamation"></i>' :
+        const icon = type === 'success' ? '<i class="fa-solid fa-circle-check"></i>' :
+            type === 'error' ? '<i class="fa-solid fa-triangle-exclamation"></i>' :
                 '<i class="fa-solid fa-circle-info"></i>';
 
-        div.innerHTML = `${icon} <span>${message}</span>`;
+        div.innerHTML = `
+            <div class="text-xl">${icon}</div>
+            <div class="flex-1 text-sm font-bold">${message}</div>
+            <button class="ml-2 hover:bg-white/20 p-1 rounded-lg transition-colors leading-none" onclick="this.parentElement.remove()">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        `;
         document.body.appendChild(div);
 
         // Animate in
@@ -56,11 +65,15 @@ const utils = {
             div.classList.remove('translate-y-[-20px]', 'opacity-0');
         });
 
-        // Remove after 3 seconds
-        setTimeout(() => {
-            div.classList.add('translate-y-[-20px]', 'opacity-0');
-            setTimeout(() => div.remove(), 300);
-        }, 3000);
+        // Remove after duration if not persistent
+        if (finalDuration > 0) {
+            setTimeout(() => {
+                if (div.parentNode) {
+                    div.classList.add('translate-y-[-20px]', 'opacity-0');
+                    setTimeout(() => div.remove(), 300);
+                }
+            }, finalDuration);
+        }
     },
 
     // Generate a simple unique ID with prefix (e.g., ITM-123456)
