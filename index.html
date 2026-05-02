@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Savi Shakthi Hardware POS</title>
+
+    <!-- Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+Sinhala:wght@400;600;700&display=swap"
+        rel="stylesheet" media="screen">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Tailwind CSS (Local) -->
+    <script src="lib/tailwind.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'Noto Sans Sinhala', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#4F46E5', // Indigo 600
+                        secondary: '#10B981', // Emerald 500
+                        dark: '#111827', // Gray 900
+                        light: '#F3F4F6', // Gray 100
+                        glass: 'rgba(255, 255, 255, 0.1)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- Libraries (Local for Offline Support) -->
+    <script src="lib/dexie.js"></script>
+    <script src="lib/chart.js"></script>
+    <script src="lib/papaparse.min.js"></script>
+    <script src="lib/jsbarcode.all.min.js"></script>
+
+    <!-- Firebase SDK (CDN) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
+    <!-- Export Libraries (PDF) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+</head>
+
+<body class="bg-gray-50 text-gray-800 font-sans">
+    <!-- Initial Login Screen -->
+    <div id="initial-login-screen"
+        class="fixed inset-0 bg-gradient-to-br from-gray-900 via-indigo-950 to-purple-900 z-[9999] flex flex-col items-center justify-center text-white transition-opacity duration-500">
+
+        <div class="absolute inset-0 overflow-hidden">
+            <!-- Abstract Background Shapes -->
+            <div
+                class="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-indigo-500/20 rounded-full blur-[100px] animate-pulse">
+            </div>
+            <div class="absolute top-[40%] right-[10%] w-[40%] h-[40%] bg-purple-500/20 rounded-full blur-[100px] animate-pulse"
+                style="animation-duration: 4s;"></div>
+        </div>
+
+        <div
+            class="relative z-10 w-full max-w-md p-8 bg-white/10 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 transform transition-all duration-300 hover:scale-[1.01]">
+            <div class="text-center mb-8 relative">
+                <!-- Close Button for Login Screen -->
+                <button onclick="app.exitApp();"
+                    class="absolute -top-4 -right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-red-500/20 text-white/50 hover:text-white transition-all flex items-center justify-center group"
+                    title="Close App">
+                    <i class="fa-solid fa-xmark text-lg group-hover:rotate-90 transition-transform"></i>
+                </button>
+                <div
+                    class="w-24 h-24 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-500/50">
+                    <i class="fa-solid fa-store text-4xl text-white"></i>
+                </div>
+                <h1 class="text-3xl font-bold tracking-tight mb-2">Savi Shakthi</h1>
+                <p class="text-indigo-200 tracking-widest text-sm font-semibold uppercase">Hardware Point of Sale</p>
+            </div>
+
+            <form id="initial-login-form" class="space-y-5">
+                <div>
+                    <label
+                        class="block text-xs font-bold text-indigo-200 uppercase mb-2 tracking-wider">Username</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-user absolute left-4 top-1/2 -translate-y-1/2 text-indigo-300"></i>
+                        <input type="text" id="init-user"
+                            class="w-full bg-black/20 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white placeholder-indigo-300/50 focus:outline-none focus:border-indigo-400 focus:bg-black/30 transition-all font-medium"
+                            placeholder="Enter username" required autocomplete="off">
+                    </div>
+                </div>
+
+                <div>
+                    <label
+                        class="block text-xs font-bold text-indigo-200 uppercase mb-2 tracking-wider">Password</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-indigo-300"></i>
+                        <input type="password" id="init-pass"
+                            class="w-full bg-black/20 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white placeholder-indigo-300/50 focus:outline-none focus:border-indigo-400 focus:bg-black/30 transition-all font-medium"
+                            placeholder="Enter password" required>
+                    </div>
+                </div>
+
+                <div id="init-login-error"
+                    class="hidden text-red-300 text-sm bg-red-500/20 p-3 rounded-lg border border-red-500/30 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span>Invalid credentials. Please try again.</span>
+                </div>
+
+                <button type="submit"
+                    class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-500/30 transform transition-all active:scale-95 flex items-center justify-center gap-2 group">
+                    <span>Access System</span>
+                    <i class="fa-solid fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                </button>
+            </form>
+
+            <div class="mt-8 text-center text-xs text-indigo-300/60 font-medium">
+                Savi Shakthi Hardware System &copy; 2026
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Receipt Container for Printing -->
+    <div id="receipt-container" style="position: absolute; left: -9999px; top: -9999px;"></div>
+
+    <div id="app-layout"
+        class="h-screen flex overflow-hidden filter blur-sm transition-all duration-700 opacity-0 pointer-events-none">
+        <!-- Sidebar -->
+        <aside class="w-48 bg-dark text-white flex flex-col shadow-2xl z-20 transition-all duration-300" id="sidebar">
+            <div class="p-6 flex items-center gap-3 border-b border-gray-700">
+                <div
+                    class="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <i class="fa-solid fa-store text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-wide">Savi Shakthi</h1>
+                    <p class="text-xs text-gray-400">Hardware POS</p>
+                </div>
+            </div>
+
+            <!-- Real-time Clock Section -->
+            <div class="px-6 py-4 mb-2 bg-white/5 border-b border-white/5">
+                <div id="sidebar-date" class="text-xl font-black text-indigo-300 tracking-tight mb-1">--- --</div>
+                <div id="sidebar-time" class="text-4xl font-black text-white tracking-tighter">--:-- --</div>
+            </div>
+
+            <nav class="flex-1 overflow-y-auto py-6 px-3 space-y-2">
+                <a href="#" onclick="app.navigate('dashboard')"
+                    class="nav-item active flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group">
+                    <i class="fa-solid fa-chart-line w-5 group-hover:text-primary transition-colors"></i>
+                    <span class="font-medium">Dashboard</span>
+                </a>
+                <a href="#" onclick="app.navigate('pos')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-yellow-400">
+                    <i class="fa-solid fa-cash-register w-5 group-hover:text-yellow-300 transition-colors"></i>
+                    <span class="font-bold">POS Billing</span>
+                </a>
+                <a href="#" onclick="app.navigate('items')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-blue-400">
+                    <i class="fa-solid fa-box-open w-5 group-hover:text-blue-300 transition-colors"></i>
+                    <span class="font-bold">Item Master</span>
+                </a>
+                <a href="#" onclick="app.navigate('stockin')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-emerald-400">
+                    <i class="fa-solid fa-truck-ramp-box w-5 group-hover:text-emerald-300 transition-colors"></i>
+                    <span class="font-bold">Stock In</span>
+                </a>
+                <a href="#" onclick="app.navigate('purchases')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-amber-500">
+                    <i class="fa-solid fa-cart-shopping w-5 group-hover:text-amber-400 transition-colors"></i>
+                    <span class="font-bold">Purchases</span>
+                </a>
+                <a href="#" onclick="app.navigate('inventory')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-violet-400">
+                    <i class="fa-solid fa-warehouse w-5 group-hover:text-violet-300 transition-colors"></i>
+                    <span class="font-bold">Inventory</span>
+                </a>
+                <a href="#" onclick="app.navigate('sales')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-red-400">
+                    <i class="fa-solid fa-file-invoice-dollar w-5 group-hover:text-red-300 transition-colors"></i>
+                    <span class="font-bold">Sales History</span>
+                </a>
+                <a href="#" onclick="app.navigate('archive')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-slate-400">
+                    <i class="fa-solid fa-box-archive w-5 group-hover:text-slate-300 transition-colors"></i>
+                    <span class="font-bold">Archive</span>
+                </a>
+                <a href="#" onclick="app.navigate('expenses')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-orange-400">
+                    <i class="fa-solid fa-file-invoice w-5 group-hover:text-orange-300 transition-colors"></i>
+                    <span class="font-bold">Expenses</span>
+                </a>
+                <a href="#" onclick="app.navigate('reports')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group">
+                    <i class="fa-solid fa-chart-line w-5 group-hover:text-cyan-400 transition-colors"></i>
+                    <span class="font-medium">Reports</span>
+                </a>
+                <a href="#" onclick="app.navigate('settings')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group">
+                    <i class="fa-solid fa-gears w-5 group-hover:text-gray-400 transition-colors"></i>
+                    <span class="font-medium">Settings</span>
+                </a>
+
+                <!-- Nav items end -->
+            </nav>
+
+            <div class="p-4 border-t border-gray-700">
+                <div
+                    class="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl p-4 shadow-lg flex flex-col gap-4 group/status">
+                    <!-- Status Row -->
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="text-[10px] text-indigo-100 mb-1 uppercase font-bold tracking-wider">System Status
+                            </p>
+                            <div class="flex items-center gap-2">
+                                <div
+                                    class="w-2 h-2 bg-green-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.6)]">
+                                </div>
+                                <span class="text-xs font-bold text-white tracking-wide"
+                                    id="system-online-status">Online</span>
+                                <span
+                                    class="text-[10px] font-black text-indigo-200 border-l border-white/20 pl-2 uppercase tracking-tighter"
+                                    id="system-user-role">---</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons Row -->
+                    <div class="flex items-center gap-1.5">
+                        <!-- Turn Off Button -->
+                        <button onclick="app.turnOff()"
+                            class="flex-1 h-9 rounded-lg bg-white/10 hover:bg-red-500 text-white flex items-center justify-center transition-all shadow-sm group/off"
+                            title="Turn Off System">
+                            <i class="fa-solid fa-power-off text-xs group-hover/off:scale-110"></i>
+                        </button>
+
+                        <!-- Save (Backup) Button -->
+                        <button onclick="app.triggerBackup()"
+                            class="flex-1 h-9 rounded-lg bg-white/10 hover:bg-emerald-500 text-white flex items-center justify-center transition-all shadow-sm group/save"
+                            title="Quick Backup">
+                            <i class="fa-solid fa-floppy-disk text-xs group-save:scale-110"></i>
+                        </button>
+
+                        <!-- Login Switch Button -->
+                        <button onclick="app.logout()"
+                            class="flex-1 h-9 rounded-lg bg-white/10 hover:bg-orange-500 text-white flex items-center justify-center transition-all shadow-sm group/switch"
+                            title="Switch User / Logout">
+                            <i class="fa-solid fa-user-gear text-xs group-switch:scale-110"></i>
+                        </button>
+
+                        <!-- Refresh Button -->
+                        <button onclick="location.reload()"
+                            class="flex-1 h-9 rounded-lg bg-white/10 hover:bg-indigo-400 text-white flex items-center justify-center transition-all shadow-sm group/refresh"
+                            title="Refresh System">
+                            <i
+                                class="fa-solid fa-arrows-rotate text-xs group-hover/refresh:rotate-180 transition-transform duration-700"></i>
+                        </button>
+
+
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col relative overflow-hidden bg-gray-50">
+
+            <!-- Top Header -->
+            <header class="h-16 bg-white shadow-sm flex items-center justify-between px-8 z-10">
+                <h2 id="page-title" class="text-2xl font-bold text-gray-800">Dashboard</h2>
+
+                <div class="flex items-center gap-4">
+                    <div class="relative">
+                        <input type="text" id="global-search" placeholder="Global Search..."
+                            class="pl-10 pr-4 py-2 rounded-full border border-gray-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary w-64 text-sm transition-all">
+                        <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                    </div>
+                    <button
+                        class="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors relative">
+                        <i class="fa-solid fa-bell text-gray-600"></i>
+                        <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div id="app-content" class="flex-1 overflow-y-auto p-8 relative">
+                <!-- Dynamic Content will be loaded here -->
+
+                <!-- Dashboard View (Default) -->
+                <div id="view-dashboard" class="view-section animate-fade-in">
+                    <!-- Payment Reminders -->
+                    <div id="dash-reminders-container" class="hidden mb-6 space-y-3">
+                        <!-- Dynamic Reminders will be injected here -->
+                    </div>
+
+                    <div class="grid grid-cols-10 gap-6 mb-8">
+                        <!-- Stat Card 1: Total Sales (Today) - 3/10 Width -->
+                        <div
+                            class="col-span-10 md:col-span-3 bg-gradient-to-br from-indigo-600 to-indigo-800 p-6 rounded-2xl shadow-xl border border-indigo-500 hover:shadow-indigo-500/20 transition-all duration-300 card-hover text-white">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-indigo-100 font-medium opacity-80">Total Sales (Today)</p>
+                                    <h3 class="text-2xl font-black mt-2" id="dash-today-sales">Rs. 0.00
+                                    </h3>
+                                </div>
+                                <div
+                                    class="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center text-white backdrop-blur-md border border-white/20">
+                                    <i class="fa-solid fa-coins text-xl"></i>
+                                </div>
+                            </div>
+                            <div
+                                class="mt-4 flex items-center text-[10px] font-bold text-indigo-100 bg-white/10 w-fit px-2 py-1 rounded-lg border border-white/10 uppercase tracking-tighter">
+                                <i class="fa-solid fa-arrow-trend-up mr-1 text-emerald-400"></i>
+                                <span>Updated just now</span>
+                            </div>
+                        </div>
+
+                        <!-- Stat Card 2: Low Stock Items - 2/10 Width -->
+                        <div onclick="window.views && views.initInventory('', { showLowStock: true }); app.navigate('inventory');"
+                            class="col-span-10 md:col-span-2 bg-gradient-to-br from-red-500 to-red-700 p-6 rounded-2xl shadow-xl border border-red-400 hover:shadow-red-500/20 transition-all duration-300 card-hover cursor-pointer text-white">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-red-100 font-medium tracking-tight opacity-80">Low Stock
+                                        Alerts</p>
+                                    <h3 class="text-3xl font-black mt-2" id="dash-low-stock">0</h3>
+                                </div>
+                                <div
+                                    class="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center text-white backdrop-blur-md border border-white/20">
+                                    <i class="fa-solid fa-triangle-exclamation text-xl animate-pulse"></i>
+                                </div>
+                            </div>
+                            <button
+                                class="mt-4 text-[10px] font-black uppercase text-red-100 hover:text-white transition-colors flex items-center gap-1 tracking-widest">
+                                View Critical <i class="fa-solid fa-arrow-right text-[8px]"></i>
+                            </button>
+                        </div>
+
+                        <!-- Stat Card 3: Total Inventory Value - 3/10 Width -->
+                        <div
+                            class="col-span-10 md:col-span-3 bg-gradient-to-br from-emerald-600 to-emerald-800 p-6 rounded-2xl shadow-xl border border-emerald-500 hover:shadow-emerald-500/20 transition-all duration-300 card-hover text-white">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-emerald-100 font-medium opacity-80">Total Inventory Value</p>
+                                    <h3 class="text-2xl font-black mt-2" id="dash-inventory-value">Rs. 0.00
+                                    </h3>
+                                </div>
+                                <div
+                                    class="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center text-white backdrop-blur-md border border-white/20">
+                                    <i class="fa-solid fa-boxes-stacked text-xl"></i>
+                                </div>
+                            </div>
+                            <div
+                                class="mt-4 flex items-center text-[10px] font-bold text-emerald-100 w-fit px-2 py-1 uppercase tracking-tighter opacity-60">
+                                <span>Cost Price Valuation</span>
+                            </div>
+                        </div>
+
+                        <!-- Stat Card 4: Total Items - 2/10 Width -->
+                        <div
+                            class="col-span-10 md:col-span-2 bg-gradient-to-br from-purple-600 to-purple-800 p-6 rounded-2xl shadow-xl border border-purple-500 hover:shadow-purple-500/20 transition-all duration-300 card-hover text-white">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm text-purple-100 font-medium opacity-80">Total Items</p>
+                                    <h3 class="text-3xl font-black mt-2" id="dash-total-items">0</h3>
+                                </div>
+                                <div
+                                    class="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center text-white backdrop-blur-md border border-white/20">
+                                    <i class="fa-solid fa-tag text-xl"></i>
+                                </div>
+                            </div>
+                            <div
+                                class="mt-4 flex items-center text-[10px] font-bold text-purple-100 w-fit px-2 py-1 uppercase tracking-tighter opacity-60">
+                                <span>Master Inventory</span>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <!-- Payment Methods Breakdown -->
+                    <h4 class="font-bold text-gray-800 text-sm mb-3 uppercase tracking-wide">Daily Payment Breakdown
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+                        <div
+                            class="bg-emerald-50 p-4 rounded-xl shadow-sm border border-emerald-100 flex items-center justify-between transition-transform hover:scale-[1.02]">
+                            <div>
+                                <p class="text-[10px] text-emerald-800 font-black uppercase opacity-60">Cash Sales</p>
+                                <h4 class="text-xl font-black text-emerald-600" id="dash-cash-sales">Rs. 0.00</h4>
+                            </div>
+                            <div
+                                class="w-10 h-10 bg-white/50 rounded-lg flex items-center justify-center text-emerald-500 border border-emerald-200 shadow-sm">
+                                <i class="fa-solid fa-money-bill-wave"></i>
+                            </div>
+                        </div>
+                        <div
+                            class="bg-indigo-50 p-4 rounded-xl shadow-sm border border-indigo-100 flex items-center justify-between transition-transform hover:scale-[1.02]">
+                            <div>
+                                <p class="text-[10px] text-indigo-800 font-black uppercase opacity-60">Card Sales</p>
+                                <h4 class="text-xl font-black text-indigo-600" id="dash-card-sales">Rs. 0.00</h4>
+                            </div>
+                            <div
+                                class="w-10 h-10 bg-white/50 rounded-lg flex items-center justify-center text-indigo-500 border border-indigo-200 shadow-sm">
+                                <i class="fa-brands fa-cc-visa"></i>
+                            </div>
+                        </div>
+                        <div
+                            class="bg-blue-50 p-4 rounded-xl shadow-sm border border-blue-100 flex items-center justify-between transition-transform hover:scale-[1.02]">
+                            <div>
+                                <p class="text-[10px] text-blue-800 font-black uppercase opacity-60">Bank Trans.</p>
+                                <h4 class="text-xl font-black text-blue-600" id="dash-bank-sales">Rs. 0.00</h4>
+                            </div>
+                            <div
+                                class="w-10 h-10 bg-white/50 rounded-lg flex items-center justify-center text-blue-500 border border-blue-200 shadow-sm">
+                                <i class="fa-solid fa-building-columns"></i>
+                            </div>
+                        </div>
+                        <div
+                            class="bg-orange-50 p-4 rounded-xl shadow-sm border-orange-100 flex items-center justify-between transition-transform hover:scale-[1.02]">
+                            <div>
+                                <p class="text-[10px] text-orange-800 font-black uppercase opacity-60">QR Sales</p>
+                                <h4 class="text-xl font-black text-orange-600" id="dash-qr-sales">Rs. 0.00</h4>
+                            </div>
+                            <div
+                                class="w-10 h-10 bg-white/50 rounded-lg flex items-center justify-center text-orange-500 border border-orange-200 shadow-sm">
+                                <i class="fa-solid fa-qrcode"></i>
+                            </div>
+                        </div>
+                        <div
+                            class="bg-red-50 p-4 rounded-xl shadow-sm border border-red-100 flex items-center justify-between transition-transform hover:scale-[1.02]">
+                            <div>
+                                <p class="text-[10px] text-red-800 font-black uppercase opacity-60">Credit</p>
+                                <h4 class="text-xl font-black text-red-600" id="dash-credit-sales">Rs. 0.00</h4>
+                            </div>
+                            <div
+                                class="w-10 h-10 bg-white/50 rounded-lg flex items-center justify-center text-red-500 border border-red-200 shadow-sm">
+                                <i class="fa-solid fa-user-clock"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section formerly containing Daily Sales Summary and Business Performance moved to Business Reports -->
+
+                    <!-- Fast Moving Low Stock Report (New) -->
+                    <div
+                        class="mt-8 bg-white rounded-2xl shadow-lg border-2 border-red-100 overflow-hidden animate-fade-in">
+                        <div class="bg-red-600 px-6 py-4 flex justify-between items-center text-white">
+                            <h4 class="font-black text-lg flex items-center gap-2">
+                                <i class="fa-solid fa-fire-flame-curved animate-bounce"></i>
+                                CRITICAL RESTOCK: FAST MOVING ITEMS
+                            </h4>
+                            <span
+                                class="text-[10px] bg-white/20 px-3 py-1 rounded-full uppercase font-black backdrop-blur-sm tracking-widest border border-white/20">High
+                                Priority</span>
+                        </div>
+                        <div class="p-6">
+                            <div class="overflow-x-auto">
+                                <table id="fast-moving-low-stock-table" class="w-full text-sm text-left">
+                                    <thead
+                                        class="text-xs text-red-400 uppercase tracking-widest border-b border-red-50">
+                                        <tr>
+                                            <th class="px-2 py-3 w-10 text-center">#</th>
+                                            <th class="px-4 py-3">Sup ID</th>
+                                            <th class="px-4 py-3">Item Name</th>
+                                            <th class="px-4 py-3 text-center">Stock Level</th>
+                                            <th class="px-4 py-3 text-center">30D Sales Qty</th>
+                                            <th class="px-4 py-3 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="fast-moving-body" class="divide-y divide-red-50 font-medium">
+                                        <tr>
+                                            <td colspan="6" class="px-4 py-12 text-center text-gray-400">
+                                                <div class="flex flex-col items-center gap-2">
+                                                    <i
+                                                        class="fa-solid fa-magnifying-glass-chart text-3xl opacity-20"></i>
+                                                    <span>Analyzing sales trends for priority items...</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+
+                </div>
+
+                <!-- Other Views will be injected here by JS -->
+                <div id="view-items" class="view-section hidden animate-fade-in"></div>
+                <div id="view-pos" class="view-section hidden animate-fade-in"></div>
+                <div id="view-stockin" class="view-section hidden animate-fade-in"></div>
+                <div id="view-inventory" class="view-section hidden animate-fade-in"></div>
+                <div id="view-sales" class="view-section hidden animate-fade-in"></div>
+                <div id="view-archive" class="view-section hidden animate-fade-in"></div>
+                <div id="view-expenses" class="view-section hidden animate-fade-in"></div>
+                <div id="view-purchases" class="view-section hidden animate-fade-in"></div>
+                <div id="view-settings" class="view-section hidden animate-fade-in"></div>
+                <div id="view-reports" class="view-section hidden animate-fade-in"></div>
+
+            </div>
+
+            <!-- POS Cart Modal / Floating Panel (Example for later) -->
+
+        </main>
+    </div>
+
+    <!-- Login Modal -->
+    <div id="login-modal"
+        class="fixed inset-0 bg-black/80 z-[100] hidden flex items-center justify-center backdrop-blur-md">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-8 shadow-2xl text-center transform transition-all">
+            <div
+                class="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+            <h3 class="text-2xl font-bold mb-2">Admin Access</h3>
+            <p class="text-gray-500 mb-6 font-medium text-sm">Please login to access this section</p>
+
+            <form id="login-form" class="space-y-4">
+                <input type="text" id="login-user"
+                    class="w-full rounded-xl border-gray-300 px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
+                    placeholder="Username" required>
+                <input type="password" id="login-pass"
+                    class="w-full rounded-xl border-gray-300 px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
+                    placeholder="Password" required>
+                <div id="login-error" class="text-red-500 text-xs text-left hidden font-medium">Invalid credentials
+                </div>
+
+                <div class="flex gap-3 pt-2">
+                    <button type="button" onclick="document.getElementById('login-modal').classList.add('hidden')"
+                        class="flex-1 py-3 text-gray-500 hover:bg-gray-100 rounded-xl font-bold transition-colors">Cancel</button>
+                    <button type="submit"
+                        class="flex-1 bg-primary hover:bg-indigo-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-indigo-500/30 transition-all">Login</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Item Modal (Moved from views.js to prevent re-render issues) -->
+    <div id="item-modal"
+        class="fixed inset-0 bg-black/50 z-[110] hidden flex items-center justify-center backdrop-blur-sm opacity-0 transition-opacity duration-200">
+        <div id="item-modal-content"
+            class="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl transform scale-95 transition-transform duration-200">
+            <h3 class="text-lg font-bold mb-4" id="item-modal-title">Add New Item</h3>
+            <form id="item-form" class="space-y-4">
+                <input type="hidden" id="item-db-id">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Item ID</label>
+                        <input type="text" id="item-id"
+                            class="w-full rounded-lg border-gray-300 bg-gray-50 px-3 py-2 text-sm focus:bg-white"
+                            required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Supplier ID</label>
+                        <input type="text" id="item-supplier"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Item Name</label>
+                    <input type="text" id="item-name" class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm"
+                        required>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Unit</label>
+                        <input id="item-unit" list="unit-list"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm"
+                            placeholder="Select or type unit...">
+                        <datalist id="unit-list">
+                            <option value="L">
+                            <option value="Ft">
+                            <option value="Pcs">
+                            <option value="Box">
+                            <option value="Roll">
+                            <option value="Set">
+                            <option value="Mm">
+                            <option value="Ml">
+                            <option value="G">
+                            <option value="In">
+                            <option value="Pair">
+                            <option value="Sq m">
+                            <option value="Bag">
+                            <option value="Yd">
+                        </datalist>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Cost Price (Auto)</label>
+                        <input type="number" id="item-cost" step="0.01"
+                            class="w-full rounded-lg border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-400 font-bold"
+                            readonly title="Updated automatically from Stock In">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">MRP Price (Auto)</label>
+                        <input type="number" id="item-mrp" step="0.01"
+                            class="w-full rounded-lg border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-400 font-bold"
+                            readonly title="Updated automatically from Stock In">
+                    </div>
+                </div>
+                <div
+                    class="px-3 py-2 bg-indigo-50 rounded-lg text-[10px] text-indigo-600 font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>Prices are automatically updated based on your latest "Stock In" entries.</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Reorder Level</label>
+                        <input type="number" id="item-reorder"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" value="5">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-indigo-600 mb-1">Default Batch ID</label>
+                        <input type="text" id="item-batch-id"
+                            class="w-full rounded-lg border-indigo-200 bg-indigo-50/30 px-3 py-2 text-sm focus:bg-white font-bold text-indigo-700"
+                            placeholder="B001" value="B001">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Remarks (Visible on POS Bill)</label>
+                    <textarea id="item-remarks" rows="2" class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm"
+                        placeholder="e.g. Free Gift, Limited Stock, Special Handle..."></textarea>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+                    <button type="button" onclick="window.views.closeItemModal()"
+                        class="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                    <button type="submit"
+                        class="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-indigo-700 rounded-lg shadow-lg shadow-indigo-200 transition-all">Save
+                        Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Barcode Selection Modal (Same style as Item Modal) -->
+    <div id="barcode-select-modal"
+        class="fixed inset-0 bg-black/50 z-[110] hidden flex items-center justify-center backdrop-blur-sm opacity-0 transition-opacity duration-200">
+        <div id="barcode-select-content"
+            class="bg-white rounded-2xl w-full max-w-lg shadow-2xl transform scale-95 transition-transform duration-200 flex flex-col max-h-[85vh]">
+            <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 rounded-t-2xl">
+                <h3 class="text-lg font-bold text-gray-800"><i
+                        class="fa-solid fa-barcode text-indigo-500 mr-2"></i>Print Selected Barcodes</h3>
+                <button onclick="views.closeBarcodeSelectionModal()"
+                    class="text-gray-400 hover:text-red-500 transition-colors text-xl">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="px-6 py-4 border-b border-gray-100">
+                <div class="relative mb-2">
+                    <input type="text" id="barcode-search-input" placeholder="Search specific items..."
+                        class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all text-sm"
+                        oninput="views.filterBarcodeSelection(this.value)">
+                    <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                </div>
+                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Note: Selected items will print
+                    in a 5-column A4 grid</p>
+            </div>
+
+            <div class="px-6 py-4 overflow-y-auto flex-1 bg-white min-h-[300px]">
+                <div id="barcode-selection-list" class="space-y-2">
+                    <!-- Checkboxes injected here -->
+                </div>
+            </div>
+
+            <div class="p-6 bg-gray-50 rounded-b-2xl flex justify-between items-center border-t border-gray-100">
+                <div class="flex flex-col">
+                    <span id="barcode-selected-count"
+                        class="text-xs font-black text-indigo-600 uppercase tracking-widest">0 selected</span>
+                    <span class="text-[10px] text-gray-400">Total 17 rows will be filled</span>
+                </div>
+                <div class="flex gap-3">
+                    <button type="button" onclick="views.closeBarcodeSelectionModal()"
+                        class="px-4 py-2 text-sm font-medium text-gray-500 hover:bg-white rounded-lg transition-colors border border-transparent hover:border-gray-200">Cancel</button>
+                    <button type="button" onclick="views.printSelectedBarcodesAction()"
+                        class="px-6 py-2 bg-primary hover:bg-indigo-700 text-white font-bold rounded-lg shadow-lg shadow-indigo-200 transition-all active:scale-95 flex items-center gap-2 text-sm">
+                        <i class="fa-solid fa-print"></i> Generate Grid
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Item Modal (For quick manual entry) -->
+    <div id="custom-item-modal"
+        class="fixed inset-0 bg-black/50 z-[110] hidden flex items-center justify-center backdrop-blur-sm opacity-0 transition-opacity duration-200">
+        <div
+            class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl transform scale-95 transition-transform duration-200">
+            <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-indigo-700">
+                <i class="fa-solid fa-pen-to-square"></i> Add Custom Item
+            </h3>
+            <p class="text-xs text-gray-400 mb-4">Add a one-time item to the bill (Will not be saved to inventory).</p>
+            <form id="custom-item-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Item Name / Description</label>
+                    <input type="text" id="custom-item-name"
+                        class="w-full rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 outline-none font-medium"
+                        placeholder="e.g. Service Charge, Delivery Fee" required>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Selling Price</label>
+                        <input type="number" id="custom-item-price" step="0.01"
+                            class="w-full rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 outline-none font-bold text-gray-800"
+                            placeholder="0.00" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Quantity</label>
+                        <input type="number" id="custom-item-qty" step="any" min="0.001" value="1"
+                            class="w-full rounded-lg border-2 border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 outline-none font-bold text-gray-800"
+                            required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase mb-1 flex justify-between">
+                        <span>Cost Price (Optional)</span>
+                        <span class="text-[10px] lowercase font-normal text-gray-400">for profit calculation</span>
+                    </label>
+                    <input type="number" id="custom-item-cost" step="0.01" value="0"
+                        class="w-full rounded-lg border-2 border-gray-100 bg-gray-50 px-3 py-2 text-sm focus:bg-white focus:border-indigo-300 outline-none text-gray-500"
+                        placeholder="0.00">
+                </div>
+
+                <div class="flex justify-end gap-2 pt-4 border-t border-gray-100 mt-2">
+                    <button type="button"
+                        onclick="document.getElementById('custom-item-modal').classList.add('hidden'); document.getElementById('custom-item-modal').classList.remove('opacity-100');"
+                        class="px-4 py-2 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">Cancel</button>
+                    <button type="submit"
+                        class="px-6 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-lg shadow-indigo-200 transition-all active:scale-95">Add
+                        to Bill</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Sale Modal -->
+    <div id="sale-edit-modal"
+        class="fixed inset-0 bg-black/50 z-[110] hidden flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+            <h3 class="text-lg font-bold mb-4">Edit Sale Record</h3>
+            <form id="sale-edit-form" class="space-y-4">
+                <input type="hidden" id="edit-sale-id">
+                <input type="hidden" id="edit-sale-item-id">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Date</label>
+                    <input type="date" id="edit-sale-date" class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm"
+                        required>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Quantity Sold</label>
+                    <input type="number" step="any" id="edit-sale-qty"
+                        class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Selling Price (Per Unit)</label>
+                    <input type="number" step="0.01" id="edit-sale-price"
+                        class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" required>
+                </div>
+                <div class="pt-4 flex justify-end gap-2">
+                    <button type="button" onclick="document.getElementById('sale-edit-modal').classList.add('hidden')"
+                        class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg text-sm">Cancel</button>
+                    <button type="submit"
+                        class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-indigo-700 text-sm">Update</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Stock Entry Modal -->
+    <div id="stockin-edit-modal"
+        class="fixed inset-0 bg-black/50 z-[110] hidden flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+            <h3 class="text-lg font-bold mb-4">Edit Stock Entry</h3>
+            <form id="stockin-edit-form" class="space-y-4">
+                <input type="hidden" id="edit-stockin-id">
+                <input type="hidden" id="edit-stockin-item-id">
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Date</label>
+                    <input type="date" id="edit-stockin-date"
+                        class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Quantity</label>
+                    <input type="number" step="any" id="edit-stockin-qty"
+                        class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" required>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">Cost Price</label>
+                        <input type="number" step="0.01" id="edit-stockin-cost"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm font-bold text-gray-700"
+                            required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">MRP Price</label>
+                        <input type="number" step="0.01" id="edit-stockin-mrp"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm font-bold text-primary" required>
+                    </div>
+                </div>
+                <div id="edit-stockin-batch-container" class="hidden">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Batch ID</label>
+                    <input type="text" id="edit-stockin-batch-id"
+                        class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm uppercase font-mono font-bold text-indigo-600"
+                        placeholder="e.g. FEB2026">
+                </div>
+                <div class="pt-4 flex justify-end gap-2">
+                    <button type="button"
+                        onclick="document.getElementById('stockin-edit-modal').classList.add('hidden')"
+                        class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg text-sm">Cancel</button>
+                    <button type="submit"
+                        class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-indigo-700 text-sm">Update</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Purchase Modal -->
+    <div id="add-purchase-modal"
+        class="fixed inset-0 bg-black/50 z-[120] hidden flex items-center justify-center backdrop-blur-sm">
+        <div
+            class="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl transform transition-all overflow-y-auto max-h-[95vh]">
+            <h3 id="purchase-modal-title" class="text-lg font-bold mb-4 text-gray-800">Record New Purchase</h3>
+            <form id="add-purchase-form" class="space-y-4">
+                <input type="hidden" id="purchase-id" value="">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Date</label>
+                        <input type="date" id="purchase-date"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Invoice Number</label>
+                        <input type="text" id="purchase-invoice-no"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" placeholder="INV-001" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Supplier Name</label>
+                    <input type="text" id="purchase-supplier"
+                        class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" placeholder="Enter supplier name"
+                        required>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Total Bill (Rs.)</label>
+                        <input type="number" id="purchase-total" step="0.01"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm font-bold text-gray-800"
+                            placeholder="0.00" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Paid Amount (Rs.)</label>
+                        <input type="number" id="purchase-paid" step="0.01"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm font-bold text-emerald-600"
+                            placeholder="0.00" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Balance (Rs.)</label>
+                        <input type="number" id="purchase-balance" readonly
+                            class="w-full rounded-lg border-gray-100 bg-gray-50 px-3 py-2 text-sm font-bold text-red-600"
+                            value="0.00">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Payment Method</label>
+                        <select id="purchase-method" class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm"
+                            required>
+                            <option value="Cash">Cash</option>
+                            <option value="Credit">Credit</option>
+                            <option value="Cheque">Cheque</option>
+                        </select>
+                    </div>
+                    <div id="purchase-settle-date-container" class="hidden">
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Settle Date (Credit)</label>
+                        <input type="date" id="purchase-settle-date"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm">
+                    </div>
+                </div>
+
+                <div id="purchase-cheque-details" class="grid grid-cols-2 gap-4 hidden">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cheque Date</label>
+                        <input type="date" id="purchase-cheque-date"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Cheque Number</label>
+                        <input type="text" id="purchase-cheque-no"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" placeholder="CHQ-001">
+                    </div>
+                </div>
+
+                <div id="purchase-reminder-container"
+                    class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100/50">
+                    <label
+                        class="block text-[10px] font-black text-indigo-400 uppercase mb-1.5 tracking-wider">Dashboard
+                        Reminder Settings</label>
+                    <div class="flex items-center gap-3">
+                        <div class="flex-1">
+                            <label class="block text-xs font-bold text-gray-500 mb-1">Remind me before (Days)</label>
+                            <input type="number" id="purchase-reminder-days" min="0" max="30" value="2"
+                                class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                                placeholder="e.g. 2">
+                        </div>
+                        <div class="flex items-center gap-2 text-xs text-gray-400 mt-5 italic">
+                            <i class="fa-solid fa-circle-info"></i>
+                            <span>Advance notification on dashboard</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-4 border-t border-gray-100 mt-2">
+                    <button type="button"
+                        onclick="document.getElementById('add-purchase-modal').classList.add('hidden')"
+                        class="px-4 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 rounded-lg">Cancel</button>
+                    <button type="submit" id="purchase-save-btn"
+                        class="px-6 py-2 text-sm font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg shadow-lg shadow-amber-200">Save
+                        Purchase</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Expense Modal -->
+    <div id="add-expense-modal"
+        class="fixed inset-0 bg-black/50 z-[120] hidden flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl transform transition-all">
+            <h3 id="expense-modal-title" class="text-lg font-bold mb-4 text-gray-800">Record New Expense</h3>
+            <form id="add-expense-form" class="space-y-4">
+                <input type="hidden" id="expense-id" value="">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Date</label>
+                    <input type="date" id="expense-date" class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm"
+                        required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Category</label>
+                    <input list="expense-categories" id="expense-category"
+                        class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" placeholder="Select or type..."
+                        required>
+                    <datalist id="expense-categories">
+                        <option value="Electricity">
+                        <option value="Water">
+                        <option value="Rent">
+                        <option value="Salary">
+                        <option value="Tea/Refreshments">
+                        <option value="Transport">
+                        <option value="Maintenance">
+                        <option value="Office Supplies">
+                        <option value="Other">
+                    </datalist>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Description</label>
+                    <input type="text" id="expense-desc" class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm"
+                        placeholder="Details...">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Amount (Rs.)</label>
+                    <input type="number" id="expense-amount" step="0.01"
+                        class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm font-bold text-gray-800"
+                        placeholder="0.00" required>
+                </div>
+                <div class="flex justify-end gap-3 pt-4 border-t border-gray-100 mt-2">
+                    <button type="button" onclick="document.getElementById('add-expense-modal').classList.add('hidden')"
+                        class="px-4 py-2 text-sm font-medium text-gray-500 hover:bg-gray-100 rounded-lg">Cancel</button>
+                    <button type="submit" id="expense-save-btn"
+                        class="px-6 py-2 text-sm font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-lg shadow-lg shadow-orange-200">Save
+                        Expense</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Shutdown Modal -->
+    <div id="shutdown-modal"
+        class="fixed inset-0 bg-gradient-to-br from-gray-900 via-indigo-950 to-purple-900 z-[10000] hidden flex flex-col items-center justify-center text-white transition-opacity duration-500 overflow-hidden">
+
+        <div class="absolute inset-0 overflow-hidden">
+            <!-- Abstract Background Shapes (Same as Login) -->
+            <div
+                class="absolute -top-[20%] -left-[10%] w-[50%] h-[50%] bg-indigo-500/20 rounded-full blur-[100px] animate-pulse">
+            </div>
+            <div class="absolute top-[40%] right-[10%] w-[40%] h-[40%] bg-purple-500/20 rounded-full blur-[100px] animate-pulse"
+                style="animation-duration: 4s;"></div>
+        </div>
+
+        <div
+            class="relative z-10 w-full max-w-md p-10 bg-white/10 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 text-center">
+            <div class="mb-8">
+                <div
+                    class="w-24 h-24 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-500/50 animate-pulse">
+                    <i class="fa-solid fa-power-off text-4xl text-white"></i>
+                </div>
+                <h2 class="text-3xl font-bold tracking-tight mb-2">System Shutting Down</h2>
+                <p class="text-indigo-200 text-sm font-semibold uppercase tracking-wider opacity-80"
+                    id="shutdown-status">
+                    Securing database & safety backup...
+                </p>
+            </div>
+
+            <div class="flex items-center justify-center gap-3 mb-10">
+                <div class="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                <div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                <div class="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
+            </div>
+
+            <!-- Manual Close Option (Visible if auto-close fails) -->
+            <div id="shutdown-complete-actions" class="hidden animate-fade-in space-y-4">
+                <button onclick="app.exitApp();"
+                    class="w-full bg-gradient-to-r from-red-500 to-orange-600 hover:from-red-400 hover:to-orange-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-red-500/30 transform transition-all active:scale-95 flex items-center justify-center gap-3 group">
+                    <i class="fa-solid fa-circle-xmark text-xl group-hover:rotate-90 transition-transform"></i>
+                    <span>Close System Window</span>
+                </button>
+
+                <button onclick="location.reload();"
+                    class="w-full bg-white/5 hover:bg-white/10 text-indigo-200 font-bold py-3 rounded-xl border border-white/10 transition-all text-xs uppercase tracking-widest">
+                    Return to Login
+                </button>
+            </div>
+
+            <div class="mt-8 text-center text-[10px] text-indigo-300/40 font-bold uppercase tracking-[0.2em]">
+                Savi Shakthi POS &copy; 2026
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Scripts -->
+    <script src="js/db.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/sync-service.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/views.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>
