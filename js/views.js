@@ -5739,7 +5739,7 @@ var views = window.views = {
                 </div>
 
                 <div class="p-8">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <button onclick="cloudSync.checkConnection()" class="group relative overflow-hidden bg-white border-2 border-emerald-50 hover:border-emerald-300 rounded-2xl p-6 text-left transition-all hover:shadow-lg">
                             <i class="fa-solid fa-signal text-3xl text-emerald-300 group-hover:text-emerald-500 mb-4"></i>
                             <h4 class="font-bold text-gray-800 mb-1">Check Connection</h4>
@@ -5756,6 +5756,12 @@ var views = window.views = {
                             <i class="fa-solid fa-cloud-arrow-down text-3xl text-orange-300 group-hover:text-orange-500 mb-4"></i>
                             <h4 class="font-bold text-gray-800 mb-1">Download from Cloud</h4>
                             <p class="text-xs text-gray-500">Pull data from Cloud to this device (Overwrites local data).</p>
+                        </button>
+
+                        <button onclick="cloudSync.clearCloudData()" class="group relative overflow-hidden bg-white border-2 border-rose-50 hover:border-rose-300 rounded-2xl p-6 text-left transition-all hover:shadow-lg">
+                            <i class="fa-solid fa-trash-can text-3xl text-rose-300 group-hover:text-rose-500 mb-4"></i>
+                            <h4 class="font-bold text-gray-800 mb-1 text-rose-600">Clean Cloud Data</h4>
+                            <p class="text-xs text-gray-500">Delete ALL data from Firebase (Permanent Wipe - Password Required).</p>
                         </button>
                     </div>
                 </div>

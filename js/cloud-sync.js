@@ -1,7 +1,11 @@
 
 window.cloudSync = {
     isSyncing: false,
-    collections: ['item_master', 'inventory', 'stock_in', 'sales', 'expenses', 'purchases', 'settings', 'item_batches', 'users'],
+    collections: [
+        'item_master', 'inventory', 'stock_in', 'sales', 'expenses', 
+        'purchases', 'settings', 'item_batches', 'users', 'held_bills',
+        'sales_archive', 'stock_in_archive', 'closing_balances', 'audit_logs'
+    ],
 
     // Check Firebase Connection
     checkConnection: async () => {
@@ -60,7 +64,16 @@ window.cloudSync = {
                     const batch = cloudDB.batch();
                     
                     chunk.forEach(doc => {
-                        const docId = doc.id ? String(doc.id) : utils.generateId('SYNC');
+                        // Correctly identify the document ID based on the table schema
+                        let docId;
+                        if (table === 'item_master' || table === 'inventory') {
+                            docId = String(doc.itemId);
+                        } else if (table === 'settings') {
+                            docId = String(doc.key);
+                        } else {
+                            docId = String(doc.id || utils.generateId('SYNC'));
+                        }
+
                         const docRef = cloudDB.collection(table).doc(docId);
                         batch.set(docRef, doc);
                     });
@@ -105,6 +118,41 @@ window.cloudSync = {
         } catch (err) {
             console.error('Cloud Download Failed:', err);
             utils.showNotification(`❌ Cloud Download Failed: ${err.message}`, 'error');
+        } finally {
+            cloudSync.isSyncing = false;
+        }
+    },
+
+    // 3. Clear All Cloud Data (Requires Password)
+    clearCloudData: async () => {
+        if (!cloudSync.verifyAccess()) return;
+        const confirmClear = confirm('⚠️ CRITICAL WARNING!\n\nThis will permanently delete ALL data from the Cloud (Firebase). This action cannot be undone.\n\nAre you absolutely sure?');
+        if (!confirmClear) return;
+
+        if (cloudSync.isSyncing) return;
+        cloudSync.isSyncing = true;
+        utils.showNotification('🔥 Initializing Cloud Wipe...', 'info');
+
+        try {
+            for (const table of cloudSync.collections) {
+                utils.showNotification(`🔥 Wiping ${table} from cloud...`, 'info');
+                const snapshot = await cloudDB.collection(table).get();
+                
+                if (!snapshot.empty) {
+                    // Chunk deletes in batches of 500
+                    for (let i = 0; i < snapshot.docs.length; i += 500) {
+                        const batch = cloudDB.batch();
+                        const chunk = snapshot.docs.slice(i, i + 500);
+                        chunk.forEach(doc => batch.delete(doc.ref));
+                        await batch.commit();
+                    }
+                    console.log(`🔥 Wiped ${table}`);
+                }
+            }
+            utils.showNotification('✅ Cloud Data Successfully Wiped!', 'success');
+        } catch (err) {
+            console.error('Cloud Wipe Failed:', err);
+            utils.showNotification(`❌ Cloud Wipe Failed: ${err.message}`, 'error');
         } finally {
             cloudSync.isSyncing = false;
         }
