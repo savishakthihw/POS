@@ -428,7 +428,7 @@ window.app = {
     triggerBackup: async () => {
         if (window.views && views.backupData) {
             await views.backupData();
-            utils.showNotification('Quick Backup Completed!', 'success');
+            utils.showNotification('Quick JSON Backup Completed!', 'success');
         }
     },
 

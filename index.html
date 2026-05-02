@@ -35,6 +35,11 @@
         }
     </script>
 
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
 
@@ -43,11 +48,6 @@
     <script src="lib/chart.js"></script>
     <script src="lib/papaparse.min.js"></script>
     <script src="lib/jsbarcode.all.min.js"></script>
-
-    <!-- Firebase SDK (CDN) -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 
     <!-- Export Libraries (PDF) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -262,8 +262,6 @@
                             <i
                                 class="fa-solid fa-arrows-rotate text-xs group-hover/refresh:rotate-180 transition-transform duration-700"></i>
                         </button>
-
-
                     </div>
                 </div>
             </div>
@@ -1035,12 +1033,21 @@
     </div>
 
     <!-- Application Scripts -->
-    <script src="js/db.js"></script>
+    <!-- Firebase & Cloud Sync -->
     <script src="js/firebase-config.js"></script>
-    <script src="js/sync-service.js"></script>
+    <script src="js/cloud-sync.js"></script>
+
+    <!-- App Scripts -->
     <script src="js/utils.js"></script>
+    <script src="js/db.js"></script>
     <script src="js/views.js"></script>
     <script src="js/app.js"></script>
+    <script>
+        // Initialize App
+        window.addEventListener('DOMContentLoaded', () => {
+            app.init();
+        });
+    </script>
 </body>
 
 </html>
