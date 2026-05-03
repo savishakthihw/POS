@@ -37,8 +37,17 @@ window.cloudSync = {
         if (cloudSync.isSyncing) return;
         cloudSync.isSyncing = true;
         
+        const cloudIndicator = document.getElementById('cloud-sync-indicator');
+        const updateStatus = (msg, color = 'blue') => {
+            if (cloudIndicator) {
+                cloudIndicator.querySelector('span').innerText = msg;
+                cloudIndicator.querySelector('.w-2').className = `w-2 h-2 rounded-full bg-${color}-400 animate-ping`;
+            }
+        };
+
         try {
             if (!isSilent) utils.showNotification('Starting Incremental Cloud Sync...', 'info');
+            updateStatus('Syncing...', 'blue');
             
             for (const table of cloudSync.collections) {
                 const lastSyncIdKey = `last_sync_id_${table}`;
@@ -90,6 +99,17 @@ window.cloudSync = {
                 }
                 console.log(`✅ Synced ${table}: ${data.length} records`);
             }
+
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            localStorage.setItem('savi_last_cloud_sync_time', timeStr);
+            
+            if (cloudIndicator) {
+                cloudIndicator.querySelector('span').innerText = `Synced ${timeStr}`;
+                cloudIndicator.querySelector('.w-2').classList.replace('bg-blue-400', 'bg-emerald-400');
+                cloudIndicator.querySelector('.w-2').classList.remove('animate-ping');
+            }
+
             if (!isSilent) utils.showNotification('✅ Incremental Sync Successful!', 'success');
             return true;
         } catch (err) {
@@ -235,22 +255,22 @@ window.cloudSync = {
         const cloudIndicator = document.getElementById('cloud-sync-indicator');
         if (!navigator.onLine) return;
         
+        const lastSync = localStorage.getItem('savi_last_cloud_sync_time');
+        
         try {
             await cloudDB.collection('settings').limit(1).get();
             if (cloudIndicator) {
-                cloudIndicator.querySelector('span').innerText = 'Cloud Sync Active';
-                cloudIndicator.querySelector('.w-2').classList.replace('bg-red-400', 'bg-emerald-400');
-                cloudIndicator.querySelector('.w-2').classList.replace('bg-blue-400', 'bg-emerald-400');
-                cloudIndicator.querySelector('i').classList.replace('text-blue-400', 'text-emerald-500');
-                cloudIndicator.classList.replace('bg-blue-50', 'bg-emerald-50');
-                cloudIndicator.classList.replace('border-blue-100', 'border-emerald-100');
+                cloudIndicator.querySelector('span').innerText = lastSync ? `Synced ${lastSync}` : 'Cloud Ready';
+                cloudIndicator.querySelector('.w-2').className = 'w-2 h-2 rounded-full bg-emerald-400';
+                cloudIndicator.querySelector('i').className = 'fa-solid fa-cloud-check text-emerald-500';
+                cloudIndicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition-all group';
             }
         } catch (err) {
             if (cloudIndicator) {
-                cloudIndicator.querySelector('span').innerText = 'Sync Error';
-                cloudIndicator.querySelector('.w-2').classList.replace('bg-blue-400', 'bg-red-400');
-                cloudIndicator.querySelector('.w-2').classList.replace('bg-emerald-400', 'bg-red-400');
-                cloudIndicator.querySelector('i').classList.replace('text-blue-400', 'text-red-400');
+                cloudIndicator.querySelector('span').innerText = 'Cloud Error';
+                cloudIndicator.querySelector('.w-2').className = 'w-2 h-2 rounded-full bg-red-400';
+                cloudIndicator.querySelector('i').className = 'fa-solid fa-cloud-exclamation text-red-400';
+                cloudIndicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-50 border border-red-100 cursor-pointer hover:bg-red-100 transition-all group';
             }
         }
     }
