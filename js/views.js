@@ -5748,8 +5748,15 @@ var views = window.views = {
 
                         <button onclick="cloudSync.uploadAll()" class="group relative overflow-hidden bg-white border-2 border-blue-50 hover:border-blue-300 rounded-2xl p-6 text-left transition-all hover:shadow-lg">
                             <i class="fa-solid fa-cloud-arrow-up text-3xl text-blue-300 group-hover:text-blue-500 mb-4"></i>
-                            <h4 class="font-bold text-gray-800 mb-1">Upload to Cloud</h4>
-                            <p class="text-xs text-gray-500">Push all local data to Firebase Firestore (Requires Password).</p>
+                            <h4 class="font-bold text-gray-800 mb-1">Incremental Cloud Sync</h4>
+                            <p class="text-xs text-gray-500">Fast Sync: Push only new data to Cloud (Recommended).</p>
+                        </button>
+
+                        <button onclick="document.getElementById('cloud-json-input').click()" class="group relative overflow-hidden bg-white border-2 border-indigo-50 hover:border-indigo-300 rounded-2xl p-6 text-left transition-all hover:shadow-lg">
+                            <i class="fa-solid fa-file-import text-3xl text-indigo-300 group-hover:text-indigo-500 mb-4"></i>
+                            <h4 class="font-bold text-gray-800 mb-1">Upload JSON to Cloud</h4>
+                            <p class="text-xs text-gray-500">Wipe Cloud & Replace with JSON data (Warning: Destructive).</p>
+                            <input type="file" id="cloud-json-input" class="hidden" accept=".json" onchange="cloudSync.uploadFromJSON(this.files[0])">
                         </button>
 
                         <button onclick="cloudSync.downloadAll()" class="group relative overflow-hidden bg-white border-2 border-orange-50 hover:border-orange-300 rounded-2xl p-6 text-left transition-all hover:shadow-lg">

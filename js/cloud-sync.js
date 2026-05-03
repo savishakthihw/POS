@@ -31,64 +31,136 @@ window.cloudSync = {
         return false;
     },
 
-    // 1. Upload Local Data to Firebase (Requires Password)
-    uploadAll: async () => {
-        if (!cloudSync.verifyAccess()) return;
+    // 1. Upload Local Data to Firebase (Incremental)
+    uploadAll: async (isSilent = false) => {
+        if (!isSilent && !cloudSync.verifyAccess()) return;
         if (cloudSync.isSyncing) return;
         cloudSync.isSyncing = true;
         
         try {
-            utils.showNotification('Verifying cloud write access...', 'info');
-            // Test write to see if rules allow it
-            await cloudDB.collection('connection_test').doc('test').set({ 
-                last_test: new Date().toISOString(),
-                status: 'ready'
-            });
-            
-            utils.showNotification('Cloud access verified. Starting sync...', 'info');
+            if (!isSilent) utils.showNotification('Starting Incremental Cloud Sync...', 'info');
             
             for (const table of cloudSync.collections) {
-                // Show which table is syncing
-                utils.showNotification(`Syncing ${table}...`, 'info');
+                const lastSyncIdKey = `last_sync_id_${table}`;
+                const lastId = parseInt(localStorage.getItem(lastSyncIdKey)) || 0;
                 
-                const data = await db[table].toArray();
+                let data = [];
+                // Tables that should ALWAYS be fully synced (Master Data)
+                const fullSyncTables = ['item_master', 'inventory', 'settings', 'users', 'item_batches'];
+                
+                if (fullSyncTables.includes(table)) {
+                    data = await db[table].toArray();
+                } else {
+                    // Incremental tables: only fetch records with ID > last synced ID
+                    data = await db[table].where('id').above(lastId).toArray();
+                }
+
                 if (data.length === 0) continue;
 
-                // Chunk data into batches of 500
+                if (!isSilent) utils.showNotification(`Syncing ${table} (${data.length} new)...`, 'info');
+                
                 const totalChunks = Math.ceil(data.length / 500);
+                let maxIdInThisSync = lastId;
+
                 for (let i = 0; i < data.length; i += 500) {
-                    const chunkNumber = Math.floor(i / 500) + 1;
-                    utils.showNotification(`Syncing ${table}: Part ${chunkNumber}/${totalChunks}...`, 'info');
-                    
                     const chunk = data.slice(i, i + 500);
                     const batch = cloudDB.batch();
                     
                     chunk.forEach(doc => {
-                        // Correctly identify the document ID based on the table schema
                         let docId;
                         if (table === 'item_master' || table === 'inventory') {
                             docId = String(doc.itemId);
                         } else if (table === 'settings') {
                             docId = String(doc.key);
                         } else {
-                            docId = String(doc.id || utils.generateId('SYNC'));
+                            docId = String(doc.id);
+                            if (doc.id > maxIdInThisSync) maxIdInThisSync = doc.id;
                         }
 
                         const docRef = cloudDB.collection(table).doc(docId);
-                        batch.set(docRef, doc);
+                        batch.set(docRef, doc, { merge: true }); // Use merge to avoid accidental data loss
                     });
                     
                     await batch.commit();
                 }
-                console.log(`✅ Uploaded ${table} (${data.length} records)`);
+                
+                // Update last sync ID for incremental tables
+                if (!fullSyncTables.includes(table)) {
+                    localStorage.setItem(lastSyncIdKey, maxIdInThisSync.toString());
+                }
+                console.log(`✅ Synced ${table}: ${data.length} records`);
             }
-            utils.showNotification('✅ Cloud Upload Successful!', 'success');
+            if (!isSilent) utils.showNotification('✅ Incremental Sync Successful!', 'success');
+            return true;
         } catch (err) {
-            console.error('Cloud Upload Failed:', err);
-            utils.showNotification(`❌ Cloud Upload Failed: ${err.message}`, 'error');
+            console.error('Cloud Sync Failed:', err);
+            if (!isSilent) utils.showNotification(`❌ Cloud Sync Failed: ${err.message}`, 'error');
+            return false;
         } finally {
             cloudSync.isSyncing = false;
         }
+    },
+
+    // 1.5 Upload from JSON File (Wipes Cloud First)
+    uploadFromJSON: async (file) => {
+        if (!cloudSync.verifyAccess()) return;
+        if (!confirm('⚠️ DANGER: This will delete ALL cloud data and replace it with the content of this JSON file. Proceed?')) return;
+        
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const jsonData = JSON.parse(e.target.result);
+                if (cloudSync.isSyncing) return;
+                cloudSync.isSyncing = true;
+
+                utils.showNotification('🔥 Wiping cloud data for fresh import...', 'warning');
+                
+                // Wipe Cloud First
+                for (const table of cloudSync.collections) {
+                    const snapshot = await cloudDB.collection(table).get();
+                    if (!snapshot.empty) {
+                        for (let i = 0; i < snapshot.docs.length; i += 500) {
+                            const batch = cloudDB.batch();
+                            snapshot.docs.slice(i, i + 500).forEach(doc => batch.delete(doc.ref));
+                            await batch.commit();
+                        }
+                    }
+                }
+
+                utils.showNotification('📥 Importing JSON data to Cloud...', 'info');
+
+                // Upload from JSON
+                for (const table of cloudSync.collections) {
+                    const data = jsonData[table];
+                    if (!data || !Array.isArray(data) || data.length === 0) continue;
+
+                    utils.showNotification(`Importing ${table}...`, 'info');
+                    for (let i = 0; i < data.length; i += 500) {
+                        const chunk = data.slice(i, i + 500);
+                        const batch = cloudDB.batch();
+                        chunk.forEach(doc => {
+                            let docId;
+                            if (table === 'item_master' || table === 'inventory') docId = String(doc.itemId);
+                            else if (table === 'settings') docId = String(doc.key);
+                            else docId = String(doc.id || utils.generateId('JSON'));
+                            
+                            batch.set(cloudDB.collection(table).doc(docId), doc);
+                        });
+                        await batch.commit();
+                    }
+                    // Reset last sync IDs to 0 since we wiped the cloud
+                    localStorage.setItem(`last_sync_id_${table}`, '0');
+                }
+
+                utils.showNotification('✅ JSON Cloud Import Successful!', 'success');
+            } catch (err) {
+                console.error('JSON Cloud Import Failed:', err);
+                utils.showNotification('❌ Import failed: ' + err.message, 'error');
+            } finally {
+                cloudSync.isSyncing = false;
+            }
+        };
+        reader.readAsText(file);
     },
 
     // 2. Download Cloud Data (Requires Password)

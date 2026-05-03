@@ -393,17 +393,21 @@ window.app = {
             try {
                 if (statusText) statusText.innerText = 'Securing database and exporting safety backup...';
                 await views.backupData();
-                if (statusText) statusText.innerText = 'Backup successful. System closing safely.';
             } catch (err) {
                 console.error('Backup failed during turn off:', err);
-                if (statusText) statusText.innerText = 'Backup failed, but system is closing.';
             }
-        } else {
-            if (statusText) statusText.innerText = 'Closing system sessions...';
         }
 
-        // Final shutdown transition - Snappier timing to catch user activation focus
-        // INCREASED DELAY for safety if a backup was triggered
+        // --- NEW: Incremental Cloud Sync on Shutdown ---
+        if (navigator.onLine) {
+            const shouldCloudSync = confirm('☁️ CLOUD SYNC\n\nWould you like to UPLOAD new data to the Cloud before turning off?');
+            if (shouldCloudSync) {
+                if (statusText) statusText.innerText = 'Syncing new data to Firebase Cloud...';
+                await cloudSync.uploadAll(true); // Silent sync
+            }
+        }
+
+        // Final shutdown transition
         setTimeout(() => {
             if (statusText) statusText.innerText = 'System Offline. Goodbye!';
 
@@ -1464,32 +1468,8 @@ window.app = {
     },
 
     checkAutoSync: async () => {
-        try {
-            const LAST_SYNC_KEY = 'savi_last_auto_sync';
-            const lastSync = localStorage.getItem(LAST_SYNC_KEY);
-            const now = new Date();
-
-            let shouldSync = false;
-            if (!lastSync) {
-                shouldSync = true;
-            } else {
-                const lastDate = new Date(lastSync);
-                // Check if 1 hour has passed (3600000 ms)
-                const diffTime = Math.abs(now - lastDate);
-                if (diffTime >= 3600000) shouldSync = true;
-            }
-
-            if (shouldSync && navigator.onLine) {
-                console.log('🔄 System Maintenance: Running automated sync check...');
-                if (window.views && views.performInternalSync) {
-                    await views.performInternalSync(true, true);
-                    localStorage.setItem(LAST_SYNC_KEY, now.toISOString());
-                    console.log('✅ Automated integrity sync complete.');
-                }
-            }
-        } catch (e) {
-            console.error('Auto-sync failed:', e);
-        }
+        // Frequency check removed as per user request. 
+        // Sync now happens manually or at shutdown.
     }
 };
 
