@@ -186,6 +186,16 @@ window.cloudSync = {
     // 2. Download Cloud Data (Requires Password)
     downloadAll: async () => {
         if (!cloudSync.verifyAccess()) return;
+        
+        // --- NEW: Safety First - Auto Local Backup before Overwriting ---
+        if (confirm('⚠️ SAFETY BACKUP\n\nThe system will now download a local backup of your PC data before overwriting it with Cloud data.\n\nPlease save the backup file first, then click OK to proceed with the download.')) {
+            utils.showNotification('Triggering safety backup...', 'info');
+            await views.backupData();
+        } else {
+            utils.showNotification('Download aborted to protect local data.', 'warning');
+            return;
+        }
+
         if (cloudSync.isSyncing) return;
         cloudSync.isSyncing = true;
         utils.showNotification('📥 Initializing Cloud Download...', 'info');
@@ -199,6 +209,8 @@ window.cloudSync = {
                     await db[table].clear();
                     await db[table].bulkAdd(cloudData);
                 }
+                // Reset sync IDs after full download
+                localStorage.setItem(`last_sync_id_${table}`, '0');
             }
             utils.showNotification('✅ Cloud Download Successful!', 'success');
             
