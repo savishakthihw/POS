@@ -38,22 +38,32 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Fetch Event
+// Fetch Event - Network First Strategy
 self.addEventListener('fetch', (event) => {
+    // Skip non-GET requests
+    if (event.request.method !== 'GET') return;
+
+    // Use a Network First strategy for all assets
     event.respondWith(
-        caches.match(event.request).then((response) => {
-            return response || fetch(event.request).then((fetchResponse) => {
-                return caches.open(CACHE_NAME).then((cache) => {
-                    // Only cache successful GET requests
-                    if (event.request.method === 'GET' && fetchResponse.status === 200) {
-                        cache.put(event.request, fetchResponse.clone());
-                    }
-                    return fetchResponse;
+        fetch(event.request)
+            .then((networkResponse) => {
+                // If successful, clone and store in cache
+                if (networkResponse.status === 200) {
+                    const responseClone = networkResponse.clone();
+                    caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(event.request, responseClone);
+                    });
+                }
+                return networkResponse;
+            })
+            .catch(() => {
+                // If network fails, try cache
+                return caches.match(event.request).then((cachedResponse) => {
+                    if (cachedResponse) return cachedResponse;
+                    
+                    // Fallback for offline if both fail
+                    console.log('Fetch failed, and no cache available.');
                 });
-            });
-        }).catch(() => {
-            // Fallback if both cache and network fail
-            console.log('Fetch failed, user might be offline');
-        })
+            })
     );
 });

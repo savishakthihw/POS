@@ -43,6 +43,9 @@ window.app = {
         window.addEventListener('offline', app.updateOnlineStatus);
         app.updateOnlineStatus(); // Initial check
 
+        // Initial cloud check
+        if (window.cloudSync) cloudSync.checkStatus();
+
         // Run Data Migration (if any)
         await app.migrateLegacyData();
         await app.migrateBatchData();
@@ -83,16 +86,6 @@ window.app = {
 
         // Load Saved Settings
         await app.loadSavedSettings();
-
-        // Dirty Shutdown Detection & Recovery
-        const wasDirty = localStorage.getItem('savi_dirty_shutdown');
-        if (wasDirty) {
-            console.warn('⚠️ SYSTEM RECOVERY: Unexpected shutdown detected. Optimizing database...');
-            await db.ghost_backups.clear().catch(() => {});
-            localStorage.removeItem('savi_dirty_shutdown');
-            utils.showNotification('System recovered from unexpected shutdown.', 'info');
-        }
-        localStorage.setItem('savi_dirty_shutdown', 'true');
 
         // Standard Maintenance: Clear Audit Logs older than 6 months
         await app.cleanupAuditLogs();
@@ -261,6 +254,9 @@ window.app = {
 
             app.updateRoleDisplay(); // Update role in sidebar
 
+            // Run an immediate sync check on unlock
+            app.checkAutoSync();
+
             utils.showNotification(`Welcome back! (${modeName} Mode)`);
         }, 500);
     },
@@ -409,7 +405,6 @@ window.app = {
         // Final shutdown transition - Snappier timing to catch user activation focus
         // INCREASED DELAY for safety if a backup was triggered
         setTimeout(() => {
-            localStorage.removeItem('savi_dirty_shutdown');
             if (statusText) statusText.innerText = 'System Offline. Goodbye!';
 
             // Hide the loading bounces
@@ -1392,6 +1387,7 @@ window.app = {
         const statusEl = document.getElementById('system-online-status');
         const dotEl = document.querySelector('#sidebar .group\\/status .w-2.h-2');
         const containerEl = document.querySelector('#sidebar .group\\/status');
+        const cloudIndicator = document.getElementById('cloud-sync-indicator');
 
         if (navigator.onLine) {
             if (statusEl) statusEl.innerText = 'Online';
@@ -1403,6 +1399,14 @@ window.app = {
                 containerEl.classList.remove('from-red-600', 'to-orange-600');
                 containerEl.classList.add('from-indigo-600', 'to-purple-600');
             }
+            if (cloudIndicator) {
+                cloudIndicator.classList.remove('hidden');
+                cloudIndicator.querySelector('span').innerText = 'Cloud Connected';
+                cloudIndicator.querySelector('.w-2').classList.replace('bg-red-400', 'bg-blue-400');
+                
+                // Trigger deeper Firebase check
+                if (window.cloudSync) cloudSync.checkStatus();
+            }
         } else {
             if (statusEl) statusEl.innerText = 'Offline Mode';
             if (dotEl) {
@@ -1412,6 +1416,11 @@ window.app = {
             if (containerEl) {
                 containerEl.classList.remove('from-indigo-600', 'to-purple-600');
                 containerEl.classList.add('from-red-600', 'to-orange-600');
+            }
+            if (cloudIndicator) {
+                cloudIndicator.querySelector('span').innerText = 'Cloud Offline';
+                cloudIndicator.querySelector('.w-2').classList.replace('bg-blue-400', 'bg-red-400');
+                cloudIndicator.querySelector('.w-2').classList.remove('animate-ping');
             }
             utils.showNotification('You are currently offline. System working from IndexedDB.', 'warning');
         }
@@ -1465,19 +1474,17 @@ window.app = {
                 shouldSync = true;
             } else {
                 const lastDate = new Date(lastSync);
-                // Check if 30 days have passed
+                // Check if 1 hour has passed (3600000 ms)
                 const diffTime = Math.abs(now - lastDate);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                if (diffDays >= 30) shouldSync = true;
+                if (diffTime >= 3600000) shouldSync = true;
             }
 
-            if (shouldSync) {
-                console.log('🔄 System Maintenance: Running automated monthly sync...');
+            if (shouldSync && navigator.onLine) {
+                console.log('🔄 System Maintenance: Running automated sync check...');
                 if (window.views && views.performInternalSync) {
-                    // Run silent sync and refresh names to keep logs clean
                     await views.performInternalSync(true, true);
                     localStorage.setItem(LAST_SYNC_KEY, now.toISOString());
-                    console.log('✅ Automated monthly sync complete.');
+                    console.log('✅ Automated integrity sync complete.');
                 }
             }
         } catch (e) {

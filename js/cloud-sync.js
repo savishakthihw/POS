@@ -156,5 +156,30 @@ window.cloudSync = {
         } finally {
             cloudSync.isSyncing = false;
         }
+    },
+
+    // Silent check for indicator
+    checkStatus: async () => {
+        const cloudIndicator = document.getElementById('cloud-sync-indicator');
+        if (!navigator.onLine) return;
+        
+        try {
+            await cloudDB.collection('settings').limit(1).get();
+            if (cloudIndicator) {
+                cloudIndicator.querySelector('span').innerText = 'Cloud Sync Active';
+                cloudIndicator.querySelector('.w-2').classList.replace('bg-red-400', 'bg-emerald-400');
+                cloudIndicator.querySelector('.w-2').classList.replace('bg-blue-400', 'bg-emerald-400');
+                cloudIndicator.querySelector('i').classList.replace('text-blue-400', 'text-emerald-500');
+                cloudIndicator.classList.replace('bg-blue-50', 'bg-emerald-50');
+                cloudIndicator.classList.replace('border-blue-100', 'border-emerald-100');
+            }
+        } catch (err) {
+            if (cloudIndicator) {
+                cloudIndicator.querySelector('span').innerText = 'Sync Error';
+                cloudIndicator.querySelector('.w-2').classList.replace('bg-blue-400', 'bg-red-400');
+                cloudIndicator.querySelector('.w-2').classList.replace('bg-emerald-400', 'bg-red-400');
+                cloudIndicator.querySelector('i').classList.replace('text-blue-400', 'text-red-400');
+            }
+        }
     }
 };
