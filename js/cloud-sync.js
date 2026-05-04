@@ -81,6 +81,10 @@ window.cloudSync = {
                             docId = String(doc.itemId);
                         } else if (table === 'settings') {
                             docId = String(doc.key);
+                        } else if (table === 'users') {
+                            docId = String(doc.username);
+                        } else if (table === 'item_batches') {
+                            docId = `${doc.itemId}_${doc.batchId}`;
                         } else {
                             docId = String(doc.id);
                             if (doc.id > maxIdInThisSync) maxIdInThisSync = doc.id;

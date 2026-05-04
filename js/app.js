@@ -175,6 +175,7 @@ window.app = {
             const errEl = document.getElementById('init-login-error');
 
             const pHash = await app.hashPassword(p);
+            const fHash = app.getFallbackHash(p);
 
             // Try index lookup first
             let user = await db.users.where('username').equalsIgnoreCase(u).first();
@@ -187,7 +188,7 @@ window.app = {
 
             console.log('SYSTEM DEBUG: Login intent for:', u);
 
-            if (user && user.passwordHash === pHash) {
+            if (user && (user.passwordHash === pHash || user.passwordHash === fHash)) {
                 console.log('SYSTEM DEBUG: Authentication SUCCESS for:', user.username);
                 app.isAdmin = user.role === 'Admin';
                 app.isViewOnly = user.role === 'User';
@@ -210,24 +211,28 @@ window.app = {
         };
     },
 
+    getFallbackHash: (password) => {
+        // Fallback: Simple XOR/Shift check for local testing if crypto is blocked
+        // This allows the system to remain functional even if opened as a file
+        let hash = 0;
+        for (let i = 0; i < password.length; i++) {
+            hash = ((hash << 5) - hash) + password.charCodeAt(i);
+            hash |= 0;
+        }
+        // Convert to a pseudo-hex string for consistency with standard hashes
+        const hex = Math.abs(hash).toString(16).padStart(8, '0');
+        const fallbackHash = hex.repeat(8); // Make it 64 chars
+
+        // If the password is 'savi', we'll return a consistent hardcoded hash to avoid any mismatch
+        if (password === 'savi') return '701c68f6451a59074b8823126759c55986927cf6641b4398327a3c3104e4c9a3';
+
+        return fallbackHash;
+    },
+
     hashPassword: async (password) => {
         if (!window.crypto || !window.crypto.subtle) {
-            console.warn('Crypto API not available. Using insecure fallback hash. (Only happens in non-secure contexts like file://)');
-            // Fallback: Simple XOR/Shift check for local testing if crypto is blocked
-            // This allows the system to remain functional even if opened as a file
-            let hash = 0;
-            for (let i = 0; i < password.length; i++) {
-                hash = ((hash << 5) - hash) + password.charCodeAt(i);
-                hash |= 0;
-            }
-            // Convert to a pseudo-hex string for consistency with standard hashes
-            const hex = Math.abs(hash).toString(16).padStart(8, '0');
-            const fallbackHash = hex.repeat(8); // Make it 64 chars
-
-            // If the password is 'savi', we'll return a consistent hardcoded hash to avoid any mismatch
-            if (password === 'savi') return '701c68f6451a59074b8823126759c55986927cf6641b4398327a3c3104e4c9a3';
-
-            return fallbackHash;
+            console.warn('Crypto API not available. Using insecure fallback hash.');
+            return app.getFallbackHash(password);
         }
 
         const msgBuffer = new TextEncoder().encode(password);
@@ -273,6 +278,7 @@ window.app = {
             const p = document.getElementById('login-pass').value;
 
             const pHash = await app.hashPassword(p);
+            const fHash = app.getFallbackHash(p);
 
             // Try index lookup
             let user = await db.users.where('username').equalsIgnoreCase(u).first();
@@ -283,7 +289,7 @@ window.app = {
                 user = users.find(x => x.username.toLowerCase() === u);
             }
 
-            if (user && user.passwordHash === pHash) {
+            if (user && (user.passwordHash === pHash || user.passwordHash === fHash)) {
                 app.isAdmin = user.role === 'Admin';
                 app.isViewOnly = user.role === 'User';
                 app.currentUser = user.username;
@@ -336,6 +342,7 @@ window.app = {
             const p = document.getElementById('login-pass').value;
 
             const pHash = await app.hashPassword(p);
+            const fHash = app.getFallbackHash(p);
 
             // Try index lookup
             let user = await db.users.where('username').equalsIgnoreCase(u).first();
@@ -346,7 +353,7 @@ window.app = {
                 user = users.find(x => x.username.toLowerCase() === u);
             }
 
-            if (user && user.passwordHash === pHash && user.role === 'Admin') {
+            if (user && (user.passwordHash === pHash || user.passwordHash === fHash) && user.role === 'Admin') {
                 document.getElementById('login-modal').classList.add('hidden');
                 document.getElementById('login-form').reset();
                 app.isAdmin = true;
