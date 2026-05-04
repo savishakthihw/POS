@@ -7,7 +7,17 @@ window.cloudSync = {
         'sales_archive', 'stock_in_archive', 'closing_balances', 'audit_logs'
     ],
 
+    // Helper to get consistent document ID for Firebase
+    getFirebaseDocId: (table, doc) => {
+        if (table === 'item_master' || table === 'inventory') return String(doc.itemId);
+        if (table === 'settings') return String(doc.key);
+        if (table === 'users') return String(doc.username);
+        if (table === 'item_batches') return `${doc.itemId}_${doc.batchId}`;
+        return String(doc.id || utils.generateId('SYNC'));
+    },
+
     // Check Firebase Connection
+
     checkConnection: async () => {
         utils.showNotification('Checking Firebase connection...', 'info');
         try {
@@ -76,23 +86,13 @@ window.cloudSync = {
                     const batch = cloudDB.batch();
                     
                     chunk.forEach(doc => {
-                        let docId;
-                        if (table === 'item_master' || table === 'inventory') {
-                            docId = String(doc.itemId);
-                        } else if (table === 'settings') {
-                            docId = String(doc.key);
-                        } else if (table === 'users') {
-                            docId = String(doc.username);
-                        } else if (table === 'item_batches') {
-                            docId = `${doc.itemId}_${doc.batchId}`;
-                        } else {
-                            docId = String(doc.id);
-                            if (doc.id > maxIdInThisSync) maxIdInThisSync = doc.id;
-                        }
+                        const docId = cloudSync.getFirebaseDocId(table, doc);
+                        if (!isNaN(doc.id) && doc.id > maxIdInThisSync) maxIdInThisSync = doc.id;
 
                         const docRef = cloudDB.collection(table).doc(docId);
                         batch.set(docRef, doc, { merge: true }); // Use merge to avoid accidental data loss
                     });
+
                     
                     await batch.commit();
                 }
@@ -154,8 +154,10 @@ window.cloudSync = {
                 utils.showNotification('📥 Importing JSON data to Cloud...', 'info');
 
                 // Upload from JSON
+                const dataRoot = jsonData.data || jsonData; 
+                
                 for (const table of cloudSync.collections) {
-                    const data = jsonData[table];
+                    const data = dataRoot[table];
                     if (!data || !Array.isArray(data) || data.length === 0) continue;
 
                     utils.showNotification(`Importing ${table}...`, 'info');
@@ -163,11 +165,7 @@ window.cloudSync = {
                         const chunk = data.slice(i, i + 500);
                         const batch = cloudDB.batch();
                         chunk.forEach(doc => {
-                            let docId;
-                            if (table === 'item_master' || table === 'inventory') docId = String(doc.itemId);
-                            else if (table === 'settings') docId = String(doc.key);
-                            else docId = String(doc.id || utils.generateId('JSON'));
-                            
+                            const docId = cloudSync.getFirebaseDocId(table, doc);
                             batch.set(cloudDB.collection(table).doc(docId), doc);
                         });
                         await batch.commit();
@@ -175,6 +173,7 @@ window.cloudSync = {
                     // Reset last sync IDs to 0 since we wiped the cloud
                     localStorage.setItem(`last_sync_id_${table}`, '0');
                 }
+
 
                 utils.showNotification('✅ JSON Cloud Import Successful!', 'success');
             } catch (err) {
