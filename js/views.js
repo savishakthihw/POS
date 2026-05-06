@@ -4767,10 +4767,17 @@ var views = window.views = {
                     </button>
                     ` : ''}
 
-                    <button onclick="views.reprintBillByNumber('${s.billNo}')" class="text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 p-1 rounded transition-colors" title="Reprint Bill"><i class="fa-solid fa-print"></i></button>
+                    <button onclick="views.reprintBillByNumber('${s.billNo}')" class="text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 p-1 rounded transition-colors" title="Reprint Bill">
+                        <i class="fa-solid fa-print"></i>
+                    </button>
+
+                    <button onclick="views.voidEntireBill('${s.billNo}')" class="text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 p-1 rounded transition-colors" title="Void Entire Bill">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
                     
-                    <button onclick="views.editSale(${s.id})" class="text-blue-500 hover:text-blue-700 p-1 ${app.isAdmin ? '' : 'hidden'}" title="Edit Sale"><i class="fa-solid fa-pen"></i></button>
-                    <button onclick="views.deleteSale(${s.id})" class="text-red-500 hover:text-red-700 p-1 ${app.isAdmin ? '' : 'hidden'}" title="Delete Sale"><i class="fa-solid fa-trash"></i></button>
+                    <button onclick="views.deleteSale(${s.id})" class="text-gray-400 hover:text-red-700 p-1 ${app.isAdmin ? '' : 'hidden'}" title="Permanently Delete Record">
+                        <i class="fa-solid fa-eraser"></i>
+                    </button>
                 </td>
             </tr>
         `).join('');
@@ -5021,29 +5028,67 @@ var views = window.views = {
         }
     },
 
-    editSale: async (id) => {
+    voidEntireBill: async (billNo) => {
         if (!app.isAdmin) {
-            app.requestAuth(() => views.editSale(id));
+            app.requestAuth(() => views.voidEntireBill(billNo));
             return;
         }
-        const sale = await db.sales.get(id);
-        if (!sale) return;
 
-        document.getElementById('edit-sale-id').value = sale.id;
-        document.getElementById('edit-sale-date').value = sale.date;
-        document.getElementById('edit-sale-item-id').value = sale.itemId;
-        document.getElementById('edit-sale-qty').value = sale.qty;
-        document.getElementById('edit-sale-price').value = sale.sellingPrice;
+        const confirmMsg = `⚠️ VOID ENTIRE BILL: ${billNo}\n\nThis will cancel ALL items in this transaction and return them to stock. This action is permanent.\n\nAre you sure you want to proceed?`;
+        if (!confirm(confirmMsg)) return;
 
-        const form = document.getElementById('sale-edit-form');
-        if (form) {
-            form.onsubmit = async (e) => {
-                e.preventDefault();
-                await views.processSaleUpdate();
-            };
+        try {
+            utils.showNotification('Voiding transaction...', 'info');
+
+            await db.transaction('rw', db.sales, db.inventory, db.item_batches, db.audit_logs, async () => {
+                const billItems = await db.sales.where('billNo').equals(billNo).toArray();
+                const activeItems = billItems.filter(i => i.paymentStatus !== 'Cancelled');
+
+                if (activeItems.length === 0) {
+                    throw new Error('No active items found for this bill.');
+                }
+
+                for (const item of activeItems) {
+                    // 1. Revert Inventory
+                    const invItem = await db.inventory.get(item.itemId);
+                    if (invItem) {
+                        const newCurrent = (invItem.currentStock || 0) + item.qty;
+                        const cost = invItem.avgCost || item.costPrice || 0;
+                        await db.inventory.update(item.itemId, {
+                            sold: (invItem.sold || 0) - item.qty,
+                            currentStock: newCurrent,
+                            stockValue: newCurrent * cost
+                        });
+                    }
+
+                    // 2. Revert Batch
+                    if (item.batchId) {
+                        const batch = await db.item_batches.where({ itemId: item.itemId, batchId: item.batchId }).first();
+                        if (batch) {
+                            await db.item_batches.update(batch.id, {
+                                currentStock: (batch.currentStock || 0) + item.qty
+                            });
+                        }
+                    }
+
+                    // 3. Mark as Cancelled
+                    await db.sales.update(item.id, {
+                        paymentStatus: 'Cancelled',
+                        updatedAt: new Date().toISOString()
+                    });
+                }
+
+                // 4. Audit Log
+                await utils.logAction('Void Bill', `Voided entire transaction ${billNo} (${activeItems.length} items)`);
+            });
+
+            utils.showNotification('Transaction voided successfully', 'success');
+            views.loadSalesTable(document.getElementById('sales-search-input').value);
+            if (typeof app !== 'undefined' && app.updateDashboard) app.updateDashboard();
+        } catch (err) {
+            console.error('Void Bill Error:', err);
+            utils.showNotification('Failed to void bill: ' + err.message, 'error');
         }
-
-        document.getElementById('sale-edit-modal').classList.remove('hidden');
     },
 
     deleteSale: async (id) => {
@@ -5145,63 +5190,6 @@ var views = window.views = {
         }
     },
 
-    processSaleUpdate: async () => {
-        const id = parseInt(document.getElementById('edit-sale-id').value);
-        const newDate = document.getElementById('edit-sale-date').value;
-        const newQty = parseFloat(document.getElementById('edit-sale-qty').value);
-        const newPrice = parseFloat(document.getElementById('edit-sale-price').value);
-
-        const oldSale = await db.sales.get(id);
-        if (!oldSale) return;
-
-        // 1. Revert Inventory (Give back stock)
-        const invItem = await db.inventory.get(oldSale.itemId);
-        if (invItem) {
-            const revertedSold = invItem.sold - oldSale.qty;
-            const revertedCurrent = invItem.currentStock + oldSale.qty;
-            // Temporarily save this state (in memory)
-
-            // 2. Apply New Inventory (Take new stock)
-            const finalSold = revertedSold + newQty;
-            const finalCurrent = revertedCurrent - newQty;
-
-            await db.inventory.update(oldSale.itemId, {
-                sold: finalSold,
-                currentStock: finalCurrent,
-                stockValue: finalCurrent * (oldSale.costPrice || 0)
-            });
-        }
-
-        // 3. Update Sale Record
-        const newTotal = newQty * newPrice;
-        const newDiscount = (oldSale.mrp * newQty) - newTotal;
-        const newProfit = newTotal - (oldSale.costPrice * newQty);
-
-        await db.sales.update(id, {
-            date: newDate,
-            qty: newQty,
-            discount: newDiscount,
-            sellingPrice: newPrice,
-            total: newTotal,
-            profit: newProfit
-        });
-
-        // 4. Update Batches (If applicable)
-        if (oldSale.batchId) {
-            const batch = await db.item_batches.where({ itemId: oldSale.itemId, batchId: oldSale.batchId }).first();
-            if (batch) {
-                // Revert old qty, apply new qty
-                const finalBatchStock = (batch.currentStock || 0) + oldSale.qty - newQty;
-                await db.item_batches.update(batch.id, {
-                    currentStock: finalBatchStock
-                });
-            }
-        }
-
-        utils.showNotification('Sale record updated');
-        document.getElementById('sale-edit-modal').classList.add('hidden');
-        views.initSales(); // Refresh table
-    },
 
     importSalesCSV: (input) => {
         const file = input.files[0];
@@ -6129,7 +6117,7 @@ var views = window.views = {
         form.onsubmit = async (e) => {
             e.preventDefault();
             const id = document.getElementById('manage-user-id').value;
-            const username = document.getElementById('manage-user-name').value.trim();
+            const username = document.getElementById('manage-user-name').value.trim().toLowerCase();
             const pass = document.getElementById('manage-user-pass').value;
             const role = document.getElementById('manage-user-role').value;
 
@@ -6137,14 +6125,22 @@ var views = window.views = {
                 const userData = {
                     username,
                     role,
-                    updatedAt: new Date()
+                    updatedAt: new Date().toISOString()
                 };
 
-                if (!id) userData.createdAt = new Date();
-                if (pass) userData.passwordHash = await app.hashPassword(pass);
+                let passChanged = false;
+                if (!id) {
+                    userData.createdAt = new Date().toISOString();
+                }
+                
+                if (pass) {
+                    userData.passwordHash = await app.hashPassword(pass);
+                    passChanged = true;
+                }
 
                 if (id) {
-                    await db.users.update(parseInt(id), userData);
+                    const numericalId = parseInt(id);
+                    await db.users.update(numericalId, userData);
                     utils.showNotification('User profile updated');
                 } else {
                     const exists = await db.users.where('username').equals(username).first();
@@ -6158,10 +6154,20 @@ var views = window.views = {
 
                 document.getElementById('user-edit-modal').remove();
                 views.loadUsers();
-                await utils.logAction('User Mgmt', `Modified user profile: ${username}`);
+                
+                const logMsg = passChanged ? 
+                    `Modified user profile and updated password for: ${username}` : 
+                    `Modified user profile details for: ${username}`;
+                await utils.logAction('User Mgmt', logMsg);
+                
+                // Force a sync if possible
+                if (typeof cloudSync !== 'undefined') {
+                    console.log('User profile changed. Triggering silent cloud sync...');
+                    cloudSync.uploadAll(true);
+                }
             } catch (err) {
-                console.error(err);
-                utils.showNotification('Failed to save user', 'error');
+                console.error('User Save Error:', err);
+                utils.showNotification('Failed to save user: ' + err.message, 'error');
             }
         };
     },

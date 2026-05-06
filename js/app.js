@@ -188,22 +188,25 @@ window.app = {
 
             console.log('SYSTEM DEBUG: Login intent for:', u);
 
-            if (user && (user.passwordHash === pHash || user.passwordHash === fHash)) {
-                console.log('SYSTEM DEBUG: Authentication SUCCESS for:', user.username);
-                app.isAdmin = user.role === 'Admin';
-                app.isViewOnly = user.role === 'User';
-                app.currentUser = user.username;
-                app.unlockSystem(user.role);
-                utils.logAction('Login', `${user.role} ${user.username} logged in (Initial)`);
-            } else {
-                console.warn('SYSTEM DEBUG: Authentication FAILED for:', u);
-                if (user) {
-                    console.log('User found in DB:', user.username);
-                    console.log('Provided PWD Hash:', pHash);
-                    console.log('Stored PWD Hash:  ', user.passwordHash);
+            if (user) {
+                // Check against SHA-256 hash or Fallback hash for maximum compatibility
+                const isMatch = (user.passwordHash === pHash || user.passwordHash === fHash);
+                
+                if (isMatch) {
+                    console.log('SYSTEM DEBUG: Authentication SUCCESS for:', user.username);
+                    app.isAdmin = user.role === 'Admin';
+                    app.isViewOnly = user.role === 'User';
+                    app.currentUser = user.username;
+                    app.unlockSystem(user.role);
+                    utils.logAction('Login', `${user.role} ${user.username} logged in (Dual-Hash Verified)`);
                 } else {
-                    console.error('User NOT found in database even with fallback.');
+                    console.warn('SYSTEM DEBUG: Authentication FAILED for:', u);
+                    errEl.classList.remove('hidden');
+                    form.classList.add('animate-shake');
+                    setTimeout(() => form.classList.remove('animate-shake'), 500);
                 }
+            } else {
+                console.error('User NOT found in database.');
                 errEl.classList.remove('hidden');
                 form.classList.add('animate-shake');
                 setTimeout(() => form.classList.remove('animate-shake'), 500);

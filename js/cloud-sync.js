@@ -16,6 +16,22 @@ window.cloudSync = {
         return String(doc.id || utils.generateId('SYNC'));
     },
 
+    // Helper to sanitize document for Firestore size limits (1MB)
+    sanitizeDoc: (doc, table, docId) => {
+        const sanitized = { ...doc };
+        let wasModified = false;
+        const LIMIT = 1048400; // Slightly less than 1MB (1,048,576 bytes) to be safe
+
+        for (const key in sanitized) {
+            if (typeof sanitized[key] === 'string' && sanitized[key].length > LIMIT) {
+                console.warn(`Field "${key}" in ${table}/${docId} is too large (${sanitized[key].length} bytes). Truncating for cloud sync.`);
+                sanitized[key] = `[DATA TOO LARGE FOR CLOUD SYNC: ${Math.round(sanitized[key].length / 1024)} KB]`;
+                wasModified = true;
+            }
+        }
+        return { sanitized, wasModified };
+    },
+
     // Check Firebase Connection
 
     checkConnection: async () => {
@@ -44,19 +60,35 @@ window.cloudSync = {
     // 1. Upload Local Data to Firebase (Incremental)
     uploadAll: async (isSilent = false) => {
         if (!isSilent && !cloudSync.verifyAccess()) return;
+        
+        // SECURITY FIX: Only Admin should be able to push data to cloud.
+        // View-Only users (Mobile) should NOT overwrite Cloud data.
+        if (typeof app !== 'undefined' && !app.isAdmin) {
+            console.warn('Sync Blocked: Non-admin users cannot upload data to cloud.');
+            return false;
+        }
+
         if (cloudSync.isSyncing) return;
         cloudSync.isSyncing = true;
         
         const cloudIndicator = document.getElementById('cloud-sync-indicator');
-        const updateStatus = (msg, color = 'blue') => {
+        const updateStatus = (msg, color = 'blue', isComplete = false) => {
             if (cloudIndicator) {
                 cloudIndicator.querySelector('span').innerText = msg;
-                cloudIndicator.querySelector('.w-2').className = `w-2 h-2 rounded-full bg-${color}-400 animate-ping`;
+                const dot = cloudIndicator.querySelector('.w-2');
+                
+                if (isComplete) {
+                    dot.className = `w-2 h-2 rounded-full bg-emerald-400`;
+                    cloudIndicator.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition-all group';
+                } else {
+                    dot.className = `w-2 h-2 rounded-full bg-${color}-400 animate-ping`;
+                    cloudIndicator.className = `flex items-center gap-2 px-3 py-1.5 rounded-full bg-${color}-50 border border-${color}-100 cursor-pointer hover:bg-${color}-100 transition-all group`;
+                }
             }
         };
 
         try {
-            if (!isSilent) utils.showNotification('Starting Incremental Cloud Sync...', 'info');
+            if (!isSilent) utils.showNotification('Synchronizing with Cloud...', 'info');
             updateStatus('Syncing...', 'blue');
             
             for (const table of cloudSync.collections) {
@@ -65,7 +97,7 @@ window.cloudSync = {
                 
                 let data = [];
                 // Tables that should ALWAYS be fully synced (Master Data)
-                const fullSyncTables = ['item_master', 'inventory', 'settings', 'users', 'item_batches'];
+                const fullSyncTables = ['item_master', 'inventory', 'settings', 'users', 'item_batches', 'sales', 'expenses'];
                 
                 if (fullSyncTables.includes(table)) {
                     data = await db[table].toArray();
@@ -81,20 +113,30 @@ window.cloudSync = {
                 const totalChunks = Math.ceil(data.length / 500);
                 let maxIdInThisSync = lastId;
 
+                let hadOversizedFields = false;
                 for (let i = 0; i < data.length; i += 500) {
                     const chunk = data.slice(i, i + 500);
                     const batch = cloudDB.batch();
                     
                     chunk.forEach(doc => {
+                        // Skip custom_font from cloud sync as requested by user
+                        if (table === 'settings' && doc.key === 'custom_font') return;
+
                         const docId = cloudSync.getFirebaseDocId(table, doc);
                         if (!isNaN(doc.id) && doc.id > maxIdInThisSync) maxIdInThisSync = doc.id;
 
+                        const { sanitized, wasModified } = cloudSync.sanitizeDoc(doc, table, docId);
+                        if (wasModified) hadOversizedFields = true;
+
                         const docRef = cloudDB.collection(table).doc(docId);
-                        batch.set(docRef, doc, { merge: true }); // Use merge to avoid accidental data loss
+                        batch.set(docRef, sanitized, { merge: true }); 
                     });
 
-                    
                     await batch.commit();
+                }
+
+                if (hadOversizedFields && !isSilent) {
+                    utils.showNotification(`Note: Some large items in ${table} were too big for Cloud Sync and were skipped.`, 'warning');
                 }
                 
                 // Update last sync ID for incremental tables
@@ -109,15 +151,17 @@ window.cloudSync = {
             localStorage.setItem('savi_last_cloud_sync_time', timeStr);
             
             if (cloudIndicator) {
-                cloudIndicator.querySelector('span').innerText = `Synced ${timeStr}`;
-                cloudIndicator.querySelector('.w-2').classList.replace('bg-blue-400', 'bg-emerald-400');
-                cloudIndicator.querySelector('.w-2').classList.remove('animate-ping');
+                updateStatus('Sync Complete', 'emerald', true);
+                setTimeout(() => {
+                    if (cloudIndicator) cloudIndicator.querySelector('span').innerText = `Synced ${timeStr}`;
+                }, 3000);
             }
 
             if (!isSilent) utils.showNotification('✅ Incremental Sync Successful!', 'success');
             return true;
         } catch (err) {
             console.error('Cloud Sync Failed:', err);
+            updateStatus('Sync Failed', 'red');
             if (!isSilent) utils.showNotification(`❌ Cloud Sync Failed: ${err.message}`, 'error');
             return false;
         } finally {
@@ -149,7 +193,10 @@ window.cloudSync = {
                             await batch.commit();
                         }
                     }
+                    // Reset last sync IDs to 0 since we wiped the cloud for this table
+                    localStorage.setItem(`last_sync_id_${table}`, '0');
                 }
+
 
                 utils.showNotification('📥 Importing JSON data to Cloud...', 'info');
 
@@ -165,14 +212,17 @@ window.cloudSync = {
                         const chunk = data.slice(i, i + 500);
                         const batch = cloudDB.batch();
                         chunk.forEach(doc => {
+                            // Skip custom_font from cloud sync
+                            if (table === 'settings' && doc.key === 'custom_font') return;
+
                             const docId = cloudSync.getFirebaseDocId(table, doc);
-                            batch.set(cloudDB.collection(table).doc(docId), doc);
+                            const { sanitized } = cloudSync.sanitizeDoc(doc, table, docId);
+                            batch.set(cloudDB.collection(table).doc(docId), sanitized);
                         });
                         await batch.commit();
                     }
-                    // Reset last sync IDs to 0 since we wiped the cloud
-                    localStorage.setItem(`last_sync_id_${table}`, '0');
                 }
+
 
 
                 utils.showNotification('✅ JSON Cloud Import Successful!', 'success');
@@ -207,10 +257,20 @@ window.cloudSync = {
             for (const table of cloudSync.collections) {
                 utils.showNotification(`📥 Downloading ${table}...`, 'info');
                 const snapshot = await cloudDB.collection(table).get();
+                
                 if (!snapshot.empty) {
                     const cloudData = snapshot.docs.map(doc => doc.data());
-                    await db[table].clear();
-                    await db[table].bulkAdd(cloudData);
+                    
+                    // Special handling for settings to preserve local-only font
+                    if (table === 'settings') {
+                        const localFont = await db.settings.get('custom_font');
+                        await db[table].clear();
+                        await db[table].bulkAdd(cloudData);
+                        if (localFont) await db.settings.put(localFont);
+                    } else {
+                        await db[table].clear();
+                        await db[table].bulkAdd(cloudData);
+                    }
                 }
                 // Reset sync IDs after full download
                 localStorage.setItem(`last_sync_id_${table}`, '0');
