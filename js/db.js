@@ -73,11 +73,11 @@ db.version(15).stores({
     settings: "key, value"
 });
 
-db.version(25).stores({
+db.version(26).stores({
     item_master: "itemId, itemName, category, supplierId, unit, costPrice, listPrice, reorderLevel, remarks, useBatch, batchId",
     inventory: "itemId, itemName, stockIn, sold, currentStock, reorderLevel, stockValue, supplierId, batchId, avgCost",
     stock_in: "++id, date, supplierId, itemId, itemName, batchId, qty, costPrice, total, remarks, mrp",
-    sales: "++id, date, billNo, itemId, itemName, batchId, supplierId, customer, qty, costPrice, mrp, discount, sellingPrice, total, profit, method, paymentStatus, settledDate, paidAmount, billDiscount, cashAmount, cardAmount, bankAmount, qrAmount",
+    sales: "++id, date, billNo, itemId, itemName, batchId, supplierId, customer, qty, costPrice, mrp, discount, sellingPrice, total, profit, method, paymentStatus, settledDate, paidAmount, billDiscount, itemDiscount, cashAmount, cardAmount, bankAmount, qrAmount",
     item_batches: "++id, itemId, batchId, [itemId+batchId], isDiscontinued, costPrice, listPrice, initialStock, currentStock",
     held_bills: "++id, timestamp, customerName, itemCount, total, cartData",
     expenses: "++id, date, category, description, amount, user",

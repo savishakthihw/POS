@@ -4363,7 +4363,9 @@ var views = window.views = {
                     qty: item.qty,
                     costPrice: item.cost,
                     mrp: item.price,
-                    discount: totalDiscount,
+                    discount: totalDiscount, // Still merged for backward compatibility and reports
+                    itemDiscount: itemDirectDiscount, // NEW: Item-level only
+                    billDiscount: billDiscount, // Already existed, but clearly separated now
                     sellingPrice: itemSellingPrice,
                     total: itemFinalTotal,
                     profit: itemProfit,
@@ -4373,7 +4375,6 @@ var views = window.views = {
                     unit: item.unit || 'Pcs',
                     time: saleTime,
                     paidAmount: paidAmountInput,
-                    billDiscount: billDiscount,
                     cashAmount: cashAmt,
                     cardAmount: cardAmt,
                     bankAmount: bankAmt,
@@ -5382,37 +5383,51 @@ var views = window.views = {
             let totalQty = 0;
             let finalTotal = 0;
 
+            // Calculate bill-wide totals first for accurate reconstruction
+            const billFinalTotal = salesRecords.reduce((sum, s) => sum + (s.total || 0), 0);
+            const billOriginalSubtotal = billFinalTotal + billDiscountStored;
+
             // Build cart-like structure from sales records
             const cartItems = salesRecords.map(sale => {
                 const itemTotal = sale.total || 0;
-                const itemDiscount = sale.discount || 0;
-
+                const itemMergedDiscount = sale.discount || 0;
+                
                 itemsSubtotal += (sale.qty * sale.mrp);
-                totalDiscountSum += itemDiscount;
-                finalTotal += itemTotal;
                 totalQty += sale.qty;
 
-                // For reprinting items, we want to show the "original" item discount if possible.
-                // Since totalDiscountSum = sum(itemDirectDiscount) + billDiscount,
-                // we can't perfectly separate itemDirectDiscount per row for legacy bills.
-                // But we'll show the stored sale.discount (which is itemDirectDiscount + prorated billDiscount)
-                // for visual consistency in the item rows.
-                
+                let itemLevelDiscount = 0;
+
+                // LOGIC: Check if new 'itemDiscount' field exists
+                if (sale.itemDiscount !== undefined) {
+                    itemLevelDiscount = sale.itemDiscount;
+                } else {
+                    // FALLBACK: Mathematical Reconstruction for old records
+                    if (billOriginalSubtotal > 0 && billDiscountStored > 0) {
+                        const factor = billFinalTotal / billOriginalSubtotal;
+                        const reconstructedOriginalItemTotal = itemTotal / factor;
+                        itemLevelDiscount = (sale.qty * sale.mrp) - reconstructedOriginalItemTotal;
+                    } else {
+                        itemLevelDiscount = itemMergedDiscount;
+                    }
+                }
+
+                totalDiscountSum += itemLevelDiscount;
+                finalTotal += itemTotal; // Accumulated for the final display total (should match billFinalTotal)
+                const originalItemTotal = (sale.qty * sale.mrp) - itemLevelDiscount;
+
                 return {
                     name: utils.cleanItemName(sale.itemName),
                     qty: sale.qty,
                     unit: sale.unit || 'Pcs',
                     price: sale.mrp,
-                    discount: itemDiscount / sale.qty, // This is (direct + prorated) per unit
-                    total: itemTotal
+                    discount: itemLevelDiscount / sale.qty, // Only item-level per unit
+                    total: originalItemTotal
                 };
             });
 
             // Calculate Bill Discount separately for display
-            // For new bills, we use the stored value.
-            // For old bills, if totalDiscountSum > 0, we treat it all as "Items Discount" (simplification).
             const billDiscount = billDiscountStored;
-            const itemsDiscount = totalDiscountSum - billDiscount;
+            const itemsDiscount = totalDiscountSum; // Now accurately represents sum of item-level discounts
 
             // Handle Paid Amount and Balance for display
             let displayPaid = 0;
