@@ -215,21 +215,22 @@ window.cloudSync = {
                             await batch.commit();
                         }
                     }
-                    // Reset last sync IDs to 0 since we wiped the cloud for this table
+                    // Reset sync markers since we wiped the cloud
                     localStorage.setItem(`last_sync_id_${table}`, '0');
+                    localStorage.setItem(`last_sync_time_${table}`, '1970-01-01T00:00:00.000Z');
                 }
-
 
                 utils.showNotification('📥 Importing JSON data to Cloud...', 'info');
 
                 // Upload from JSON
                 const dataRoot = jsonData.data || jsonData; 
+                let totalUploaded = 0;
                 
                 for (const table of cloudSync.collections) {
                     const data = dataRoot[table];
                     if (!data || !Array.isArray(data) || data.length === 0) continue;
 
-                    utils.showNotification(`Importing ${table}...`, 'info');
+                    utils.showNotification(`Importing ${table} (${data.length} records)...`, 'info');
                     for (let i = 0; i < data.length; i += 500) {
                         const chunk = data.slice(i, i + 500);
                         const batch = cloudDB.batch();
@@ -240,19 +241,21 @@ window.cloudSync = {
                             const docId = cloudSync.getFirebaseDocId(table, doc);
                             const { sanitized } = cloudSync.sanitizeDoc(doc, table, docId);
                             batch.set(cloudDB.collection(table).doc(docId), sanitized);
+                            totalUploaded++;
                         });
                         await batch.commit();
                     }
                 }
 
-
-
-                utils.showNotification('✅ JSON Cloud Import Successful!', 'success');
+                utils.showNotification(`✅ Cloud Upload Completed! ${totalUploaded} records synced.`, 'success');
             } catch (err) {
                 console.error('JSON Cloud Import Failed:', err);
                 utils.showNotification('❌ Import failed: ' + err.message, 'error');
             } finally {
                 cloudSync.isSyncing = false;
+                // Clear input
+                const input = document.getElementById('cloud-json-input');
+                if (input) input.value = '';
             }
         };
         reader.readAsText(file);
@@ -294,8 +297,9 @@ window.cloudSync = {
                         await db[table].bulkAdd(cloudData);
                     }
                 }
-                // Reset sync IDs after full download
+                // Reset sync markers after full download to ensure next incremental sync starts fresh
                 localStorage.setItem(`last_sync_id_${table}`, '0');
+                localStorage.setItem(`last_sync_time_${table}`, '1970-01-01T00:00:00.000Z');
             }
             utils.showNotification('✅ Cloud Download Successful!', 'success');
             
@@ -337,6 +341,9 @@ window.cloudSync = {
                     }
                     console.log(`🔥 Wiped ${table}`);
                 }
+                // Reset local sync markers for this table since cloud is now empty
+                localStorage.setItem(`last_sync_id_${table}`, '0');
+                localStorage.setItem(`last_sync_time_${table}`, '1970-01-01T00:00:00.000Z');
             }
             utils.showNotification('✅ Cloud Data Successfully Wiped!', 'success');
         } catch (err) {
