@@ -2751,6 +2751,17 @@ var views = window.views = {
                 const items = await db.item_master.toArray();
                 let allStockIn = await db.stock_in.toArray();
                 const allSales = await db.sales.toArray();
+                const stockInMap = new Map();
+                allStockIn.forEach(s => {
+                    if (!stockInMap.has(s.itemId)) stockInMap.set(s.itemId, []);
+                    stockInMap.get(s.itemId).push(s);
+                });
+                const salesMap = new Map();
+                allSales.forEach(s => {
+                    if (s.paymentStatus === 'Cancelled') return;
+                    if (!salesMap.has(s.itemId)) salesMap.set(s.itemId, []);
+                    salesMap.get(s.itemId).push(s);
+                });
                 
                 // PRESERVE STATUS: Fetch existing batch statuses early to inform Item Master price sync
                 const existingBatches = await db.item_batches.toArray();
@@ -2808,7 +2819,7 @@ var views = window.views = {
                     }
 
                     // Identify the ACTUAL latest batch for this item to keep it in sync (Favoring active batches)
-                    const itemStocks = allStockIn.filter(s => s.itemId === item.itemId).sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+                    const itemStocks = (stockInMap.get(item.itemId) || []).sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0));
                     const latestStockRecord = itemStocks.find(s => !discStatusMap.get(`${item.itemId}_${String(s.batchId || 'B001').toLowerCase()}`)) || itemStocks[0];
                     const finalBatchId = latestStockRecord ? latestStockRecord.batchId : (item.batchId || 'B001');
                     const finalCost = latestStockRecord ? (parseFloat(latestStockRecord.costPrice) || 0) : (parseFloat(item.costPrice) || 0);
@@ -2829,8 +2840,8 @@ var views = window.views = {
                         }));
                     }
 
-                    const stockInRecords = allStockIn.filter(r => r.itemId === item.itemId);
-                    const salesRecords = allSales.filter(r => r.itemId === item.itemId && r.paymentStatus !== 'Cancelled');
+                    const stockInRecords = stockInMap.get(item.itemId) || [];
+                    const salesRecords = salesMap.get(item.itemId) || [];
 
                     const totalIn = stockInRecords.reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
                     const totalSold = salesRecords.reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
@@ -2951,7 +2962,7 @@ var views = window.views = {
             await views.backupData();
             utils.showNotification('Safety backup created. Processing data...', 'info');
 
-            await db.transaction('rw', db.sales, db.sales_archive, db.stock_in, db.stock_in_archive, db.audit_logs, async () => {
+            await db.transaction('rw', db.sales, db.sales_archive, db.stock_in, db.stock_in_archive, db.audit_logs, db.purchases, db.purchases_archive, async () => {
                 const targetSales = await db.sales.filter(s => {
                     if (!s.date) return false;
                     const d = new Date(s.date);
@@ -2965,7 +2976,13 @@ var views = window.views = {
                     return !isNaN(d.getTime()) && d.getFullYear() === year;
                 }).toArray();
 
-                if (targetSales.length === 0 && targetStockIn.length === 0) {
+                const targetPurchases = await db.purchases.filter(p => {
+                    if (!p.date) return false;
+                    const d = new Date(p.date);
+                    return !isNaN(d.getTime()) && d.getFullYear() === year;
+                }).toArray();
+
+                if (targetSales.length === 0 && targetStockIn.length === 0 && targetPurchases.length === 0) {
                     throw new Error(`No records found for the year ${year}.`);
                 }
 
@@ -3012,6 +3029,17 @@ var views = window.views = {
                     });
                     await db.stock_in_archive.bulkAdd(archiveStockIn);
                     await db.stock_in.bulkDelete(targetStockIn.map(sin => sin.id));
+                }
+
+                // --- 2.5 ARCHIVE PURCHASES ---
+                if (targetPurchases.length > 0) {
+                    const archivePurchases = targetPurchases.map(p => {
+                        let ns = { ...p, archiveYear: year };
+                        delete ns.id;
+                        return ns;
+                    });
+                    await db.purchases_archive.bulkAdd(archivePurchases);
+                    await db.purchases.bulkDelete(targetPurchases.map(p => p.id));
                 }
 
                 // --- 3. CREATE CONSOLIDATED BALANCE FORWARD ---
@@ -3095,25 +3123,21 @@ var views = window.views = {
 
                         const actualId = itemInMaster.itemId; // Use ID from master
                         const invItem = await db.inventory.get(actualId);
-                        const cost = itemInMaster.costPrice || 0;
+                        const currentQty = invItem ? (invItem.currentStock || 0) : 0;
+                        const diff = newStock - currentQty;
 
-                        if (invItem) {
-                            await db.inventory.update(actualId, {
-                                supplierId: itemInMaster.supplierId,
-                                currentStock: newStock,
-                                stockValue: newStock * cost
-                            });
-                            count++;
-                        } else {
-                            await db.inventory.add({
+                        if (diff !== 0) {
+                            await db.stock_in.add({
+                                date: new Date().toISOString().split('T')[0],
+                                supplierId: itemInMaster.supplierId || 'SYSTEM',
                                 itemId: actualId,
                                 itemName: itemInMaster.itemName,
-                                supplierId: itemInMaster.supplierId,
-                                stockIn: newStock,
-                                sold: 0,
-                                currentStock: newStock,
-                                reorderLevel: itemInMaster.reorderLevel || 0,
-                                stockValue: newStock * cost
+                                batchId: itemInMaster.batchId || 'B001',
+                                qty: diff,
+                                costPrice: itemInMaster.costPrice || 0,
+                                mrp: itemInMaster.listPrice || 0,
+                                total: diff * (itemInMaster.costPrice || 0),
+                                remarks: `CSV STOCK ADJUSTMENT (${newStock})`
                             });
                             count++;
                         }
@@ -3123,10 +3147,11 @@ var views = window.views = {
                     }
                 }
 
-                if (skipped > 0) {
-                    utils.showNotification(`Updated stock for ${count} items. ${skipped} rows skipped.`, 'info');
+                if (count > 0) {
+                    await views.recalculateAllInventory(true);
+                    utils.showNotification(`Adjusted stock for ${count} items. ${skipped} rows skipped.`, 'success');
                 } else {
-                    utils.showNotification(`Successfully updated stock for ${count} items`);
+                    utils.showNotification(`No stock changes detected. ${skipped} rows skipped.`, 'info');
                 }
 
                 views.initInventory();
@@ -3180,7 +3205,10 @@ var views = window.views = {
         // --- Get Top 24 Fast Moving Items for Quick Grid ---
         let displayItems = [];
         try {
-            const allSales = await db.sales.toArray();
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const startDate = thirtyDaysAgo.toISOString().split('T')[0];
+            const allSales = await db.sales.where('date').aboveOrEqual(startDate).toArray();
             const frequencyMap = {};
             allSales.forEach(s => {
                 if (!frequencyMap[s.itemId]) frequencyMap[s.itemId] = 0;
@@ -3851,7 +3879,13 @@ var views = window.views = {
 
         if (existing) {
             existing.qty += qtyChange;
-            existing.total = existing.qty * (existing.price - (existing.discount || 0));
+            if (existing.qty === 0) {
+                const idx = window.posCart.indexOf(existing);
+                window.posCart.splice(idx, 1);
+                utils.showNotification('Item removed (Quantity reached 0)', 'info');
+            } else {
+                existing.total = existing.qty * (existing.price - (existing.discount || 0));
+            }
         } else {
             // Fetch Inventory Data for remains display
             const invRecord = await db.inventory.get(standardId);

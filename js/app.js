@@ -51,6 +51,8 @@ window.app = {
         await app.migrateBatchData();
         await app.migrateIdToString(); // New Migration
         await app.migrateStockInBatches(); // Fix missing Batch IDs in Stock In
+        await app.initializeUpdatedAt(); // Initialize timestamps for sync
+
 
         // Check for Ghost Recovery
         await app.checkGhostRecovery();
@@ -1365,6 +1367,41 @@ window.app = {
         }
     },
 
+    initializeUpdatedAt: async () => {
+        const migrationFlag = 'savi_updated_at_initialized_v1';
+        if (localStorage.getItem(migrationFlag)) return;
+
+        console.log('🔄 Initializing updatedAt timestamps for existing records...');
+        try {
+            const syncTables = [
+                'item_master', 'inventory', 'stock_in', 'sales', 'expenses', 
+                'purchases', 'settings', 'item_batches', 'users', 'held_bills',
+                'sales_archive', 'stock_in_archive', 'purchases_archive', 'closing_balances', 'audit_logs'
+            ];
+
+
+            for (const table of syncTables) {
+                if (!db[table]) continue;
+                const records = await db[table].toArray();
+                const now = new Date().toISOString();
+                
+                await db.transaction('rw', db[table], async () => {
+                    for (const record of records) {
+                        if (!record.updatedAt) {
+                            const key = db[table].schema.primKey.name;
+                            await db[table].update(record[key], { updatedAt: now });
+                        }
+                    }
+                });
+            }
+
+            localStorage.setItem(migrationFlag, 'true');
+            console.log('✅ UpdatedAt Initialization Complete.');
+        } catch (err) {
+            console.error('UpdatedAt Initialization Failed:', err);
+        }
+    },
+
     migrateStockInBatches: async () => {
         const migrationFlag = 'savi_stockin_batch_migrated_v1';
         if (localStorage.getItem(migrationFlag)) return;
@@ -1415,11 +1452,13 @@ window.app = {
             }
             if (cloudIndicator) {
                 cloudIndicator.classList.remove('hidden');
-                cloudIndicator.querySelector('span').innerText = 'Cloud Connected';
-                cloudIndicator.querySelector('.w-2').classList.replace('bg-red-400', 'bg-blue-400');
-                
-                // Trigger deeper Firebase check
-                if (window.cloudSync) cloudSync.checkStatus();
+                // Use cloudSync to update the indicator properly instead of hardcoding text here
+                if (window.cloudSync) {
+                    cloudSync.checkStatus();
+                } else {
+                    cloudIndicator.querySelector('span').innerText = 'Cloud Connected';
+                    cloudIndicator.querySelector('.w-2').classList.replace('bg-red-400', 'bg-blue-400');
+                }
             }
         } else {
             if (statusEl) statusEl.innerText = 'Offline Mode';

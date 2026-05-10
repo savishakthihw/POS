@@ -4,8 +4,9 @@ window.cloudSync = {
     collections: [
         'item_master', 'inventory', 'stock_in', 'sales', 'expenses', 
         'purchases', 'settings', 'item_batches', 'users', 'held_bills',
-        'sales_archive', 'stock_in_archive', 'closing_balances', 'audit_logs'
+        'sales_archive', 'stock_in_archive', 'purchases_archive', 'closing_balances', 'audit_logs'
     ],
+
 
     // Helper to get consistent document ID for Firebase
     getFirebaseDocId: (table, doc) => {
@@ -89,71 +90,92 @@ window.cloudSync = {
 
         try {
             if (!isSilent) utils.showNotification('Synchronizing with Cloud...', 'info');
-            updateStatus('Syncing...', 'blue');
+            updateStatus('Synchronizing...', 'blue');
             
             for (const table of cloudSync.collections) {
-                const lastSyncIdKey = `last_sync_id_${table}`;
-                const lastId = parseInt(localStorage.getItem(lastSyncIdKey)) || 0;
+                const lastSyncTimeKey = `last_sync_time_${table}`;
+                const lastSyncTime = localStorage.getItem(lastSyncTimeKey) || "1970-01-01T00:00:00.000Z";
                 
                 let data = [];
-                // Tables that should ALWAYS be fully synced (Master Data)
-                const fullSyncTables = ['item_master', 'inventory', 'settings', 'users', 'item_batches', 'sales', 'expenses'];
+                // Tables that should ALWAYS be fully synced (Small Master Data)
+                const fullSyncTables = ['settings', 'users'];
                 
                 if (fullSyncTables.includes(table)) {
                     data = await db[table].toArray();
                 } else {
-                    // Incremental tables: only fetch records with ID > last synced ID
-                    data = await db[table].where('id').above(lastId).toArray();
+                    // Incremental: New records OR updated records
+                    // We check for updatedAt > lastSyncTime OR id > lastId (for legacy support)
+                    const lastSyncIdKey = `last_sync_id_${table}`;
+                    const lastId = parseInt(localStorage.getItem(lastSyncIdKey)) || 0;
+
+                    // Fetch records modified since last sync
+                    const updatedRecords = await db[table].where('updatedAt').above(lastSyncTime).toArray();
+                    
+                    // Also fetch new records based on ID (for those without updatedAt yet)
+                    let newRecords = [];
+                    if (db[table].schema.primKey.name === 'id') {
+                        newRecords = await db[table].where('id').above(lastId).toArray();
+                    }
+                    
+                    // Merge and de-duplicate
+                    const combined = [...updatedRecords, ...newRecords];
+                    const seen = new Set();
+                    data = combined.filter(doc => {
+                        const uniqueKey = table === 'item_master' || table === 'inventory' ? doc.itemId : (doc.id || doc.key || JSON.stringify(doc));
+                        if (seen.has(uniqueKey)) return false;
+                        seen.add(uniqueKey);
+                        return true;
+                    });
                 }
 
                 if (data.length === 0) continue;
 
-                if (!isSilent) utils.showNotification(`Syncing ${table} (${data.length} new)...`, 'info');
+                if (!isSilent) utils.showNotification(`Syncing ${table} (${data.length} records)...`, 'info');
                 
-                const totalChunks = Math.ceil(data.length / 500);
-                let maxIdInThisSync = lastId;
+                let maxIdInThisSync = parseInt(localStorage.getItem(`last_sync_id_${table}`)) || 0;
+                let maxTimeInThisSync = lastSyncTime;
 
-                let hadOversizedFields = false;
                 for (let i = 0; i < data.length; i += 500) {
                     const chunk = data.slice(i, i + 500);
                     const batch = cloudDB.batch();
                     
                     chunk.forEach(doc => {
-                        // Skip custom_font from cloud sync as requested by user
                         if (table === 'settings' && doc.key === 'custom_font') return;
 
                         const docId = cloudSync.getFirebaseDocId(table, doc);
-                        if (!isNaN(doc.id) && doc.id > maxIdInThisSync) maxIdInThisSync = doc.id;
+                        
+                        // Update trackable metrics
+                        if (doc.id && !isNaN(doc.id) && doc.id > maxIdInThisSync) maxIdInThisSync = doc.id;
+                        if (doc.updatedAt && doc.updatedAt > maxTimeInThisSync) maxTimeInThisSync = doc.updatedAt;
 
                         const { sanitized, wasModified } = cloudSync.sanitizeDoc(doc, table, docId);
-                        if (wasModified) hadOversizedFields = true;
-
                         const docRef = cloudDB.collection(table).doc(docId);
                         batch.set(docRef, sanitized, { merge: true }); 
                     });
 
                     await batch.commit();
                 }
-
-                if (hadOversizedFields && !isSilent) {
-                    utils.showNotification(`Note: Some large items in ${table} were too big for Cloud Sync and were skipped.`, 'warning');
-                }
                 
-                // Update last sync ID for incremental tables
-                if (!fullSyncTables.includes(table)) {
-                    localStorage.setItem(lastSyncIdKey, maxIdInThisSync.toString());
+                // Update markers
+                localStorage.setItem(lastSyncTimeKey, maxTimeInThisSync);
+                if (maxIdInThisSync > 0) {
+                    localStorage.setItem(`last_sync_id_${table}`, maxIdInThisSync.toString());
                 }
                 console.log(`✅ Synced ${table}: ${data.length} records`);
             }
 
+
             const now = new Date();
+            const dateStr = now.toLocaleDateString([], { month: 'short', day: 'numeric' });
             const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            localStorage.setItem('savi_last_cloud_sync_time', timeStr);
+            const fullSyncStr = `${dateStr}, ${timeStr}`;
+            localStorage.setItem('savi_last_cloud_sync_time', fullSyncStr);
+
             
             if (cloudIndicator) {
                 updateStatus('Sync Complete', 'emerald', true);
                 setTimeout(() => {
-                    if (cloudIndicator) cloudIndicator.querySelector('span').innerText = `Synced ${timeStr}`;
+                    if (cloudIndicator) cloudIndicator.querySelector('span').innerText = `Synced ${fullSyncStr}`;
                 }, 3000);
             }
 

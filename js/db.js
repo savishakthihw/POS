@@ -73,23 +73,25 @@ db.version(15).stores({
     settings: "key, value"
 });
 
-db.version(26).stores({
-    item_master: "itemId, itemName, category, supplierId, unit, costPrice, listPrice, reorderLevel, remarks, useBatch, batchId",
-    inventory: "itemId, itemName, stockIn, sold, currentStock, reorderLevel, stockValue, supplierId, batchId, avgCost",
-    stock_in: "++id, date, supplierId, itemId, itemName, batchId, qty, costPrice, total, remarks, mrp",
-    sales: "++id, date, billNo, itemId, itemName, batchId, supplierId, customer, qty, costPrice, mrp, discount, sellingPrice, total, profit, method, paymentStatus, settledDate, paidAmount, billDiscount, itemDiscount, cashAmount, cardAmount, bankAmount, qrAmount",
-    item_batches: "++id, itemId, batchId, [itemId+batchId], isDiscontinued, costPrice, listPrice, initialStock, currentStock",
-    held_bills: "++id, timestamp, customerName, itemCount, total, cartData",
-    expenses: "++id, date, category, description, amount, user",
-    purchases: "++id, date, supplierName, invoiceNo, totalBill, paidAmount, balance, method, chequeDate, chequeNo, settleDate",
-    settings: "key, value",
-    audit_logs: "++id, timestamp, user, action, details",
-    users: "++id, &username, role, passwordHash, createdAt",
+db.version(28).stores({
+    item_master: "itemId, itemName, category, supplierId, unit, costPrice, listPrice, reorderLevel, remarks, useBatch, batchId, updatedAt",
+    inventory: "itemId, itemName, stockIn, sold, currentStock, reorderLevel, stockValue, supplierId, batchId, avgCost, updatedAt",
+    stock_in: "++id, date, supplierId, itemId, itemName, batchId, qty, costPrice, total, remarks, mrp, updatedAt",
+    sales: "++id, date, billNo, itemId, itemName, batchId, supplierId, customer, qty, costPrice, mrp, discount, sellingPrice, total, profit, method, paymentStatus, settledDate, paidAmount, billDiscount, itemDiscount, cashAmount, cardAmount, bankAmount, qrAmount, updatedAt",
+    item_batches: "++id, itemId, batchId, [itemId+batchId], isDiscontinued, costPrice, listPrice, initialStock, currentStock, updatedAt",
+    held_bills: "++id, timestamp, customerName, itemCount, total, cartData, updatedAt",
+    expenses: "++id, date, category, description, amount, user, updatedAt",
+    purchases: "++id, date, supplierName, invoiceNo, totalBill, paidAmount, balance, method, chequeDate, chequeNo, settleDate, updatedAt",
+    settings: "key, value, updatedAt",
+    audit_logs: "++id, timestamp, user, action, details, updatedAt",
+    users: "++id, &username, role, passwordHash, createdAt, updatedAt",
     ghost_backups: "++id, timestamp",
-    sales_archive: "++id, date, billNo, itemId, itemName, batchId, archiveYear",
-    stock_in_archive: "++id, date, supplierId, itemId, itemName, batchId, archiveYear",
-    closing_balances: "++id, year, itemId, itemName, qty, costPrice, value"
+    sales_archive: "++id, date, billNo, itemId, itemName, batchId, archiveYear, updatedAt",
+    stock_in_archive: "++id, date, supplierId, itemId, itemName, batchId, archiveYear, updatedAt",
+    purchases_archive: "++id, date, supplierName, invoiceNo, archiveYear, updatedAt",
+    closing_balances: "++id, year, itemId, itemName, qty, costPrice, value, updatedAt"
 });
+
 
 // Helper to check DB connection
 db.open().then(() => {
@@ -97,3 +99,25 @@ db.open().then(() => {
 }).catch(err => {
     console.error("Failed to open db: " + (err.stack || err));
 });
+
+// --- CLOUD SYNC TRACKING HOOKS ---
+const syncTables = [
+    'item_master', 'inventory', 'stock_in', 'sales', 'expenses', 
+    'purchases', 'settings', 'item_batches', 'users', 'held_bills',
+    'sales_archive', 'stock_in_archive', 'purchases_archive', 'closing_balances', 'audit_logs'
+];
+
+
+syncTables.forEach(tableName => {
+    if (db[tableName]) {
+        // Auto-add updatedAt on creation
+        db[tableName].hook('creating', (primKey, obj) => {
+            obj.updatedAt = new Date().toISOString();
+        });
+        // Auto-update updatedAt on modification
+        db[tableName].hook('updating', (modifications) => {
+            return { ...modifications, updatedAt: new Date().toISOString() };
+        });
+    }
+});
+
