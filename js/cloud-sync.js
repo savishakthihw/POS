@@ -250,13 +250,17 @@ window.cloudSync = {
                 utils.showNotification(`✅ Cloud Upload Completed! ${totalUploaded} records synced.`, 'success');
             } catch (err) {
                 console.error('JSON Cloud Import Failed:', err);
-                utils.showNotification('❌ Import failed: ' + err.message, 'error');
+                utils.showNotification('❌ Cloud Upload Unsuccessful! Error: ' + err.message, 'error');
             } finally {
                 cloudSync.isSyncing = false;
                 // Clear input
                 const input = document.getElementById('cloud-json-input');
                 if (input) input.value = '';
             }
+        };
+        reader.onerror = () => {
+            utils.showNotification('❌ Cloud Upload Unsuccessful! Could not read file.', 'error');
+            cloudSync.isSyncing = false;
         };
         reader.readAsText(file);
     },
