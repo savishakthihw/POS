@@ -787,8 +787,8 @@ window.app = {
             const profitTotal = todaySales.reduce((sum, sale) => sum + (sale.profit || 0), 0);
 
             document.getElementById('dash-today-sales').innerHTML = `
-                <div class="text-3xl font-black text-gray-800">${utils.formatCurrency(salesTotal)}</div>
-                <div class="mt-1 text-sm font-bold text-blue-600 flex items-center gap-1.5 opacity-90">
+                <div class="text-3xl font-black text-white">${utils.formatCurrency(salesTotal)}</div>
+                <div class="mt-1 text-sm font-bold text-indigo-100 flex items-center gap-1.5 opacity-90">
                     <i class="fa-solid fa-chart-pie text-[10px]"></i> Profit: ${utils.formatCurrency(profitTotal)}
                 </div>
             `;
