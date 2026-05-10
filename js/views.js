@@ -122,32 +122,30 @@ var views = window.views = {
                             <i class="fa-solid fa-plus"></i> Add
                         </button>
                         
-                        <button onclick="views.openBarcodeSelectionModal()" class="bg-indigo-600 hover:bg-indigo-800 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors border border-indigo-500 shadow-sm">
-                            <i class="fa-solid fa-list-check"></i> Print Selected
-                        </button>
+
                     </div>
                 </div>
                 
                 <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex-1 flex flex-col">
                     <div class="overflow-auto flex-1">
-                        <table id="items-master-table" class="w-full text-[11px] text-left">
-                            <thead class="text-[10px] text-gray-500 uppercase bg-gray-50 sticky top-0">
+                        <table id="items-master-table" class="w-full text-[12.5px] text-left">
+                            <thead class="text-[11.5px] text-gray-500 uppercase bg-gray-50 sticky top-0">
                                 <tr>
-                                    <th class="px-1 py-2 w-8 text-center">#</th>
-                                    <th class="px-1 py-2 w-8 text-center">BT</th>
-                                    <th class="px-1 py-2 w-16 text-center">ID</th>
-                                    <th class="px-2 py-2">Item Name</th>
-                                    <th class="px-1 py-2 text-center text-indigo-500">Batch</th>
-                                    <th class="px-1 py-2 text-center">Barcode</th>
-                                    <th class="px-1 py-2 w-12 text-center">Sup ID</th>
-                                    <th class="px-1 py-2 w-10 text-center">Unit</th>
-                                    <th class="px-1 py-2 text-center">Cost</th>
-                                    <th class="px-1 py-2 text-center">MRP</th>
-                                    <th class="px-1 py-2 text-center text-emerald-600 ${app.isAdmin ? '' : 'hidden'}">Exp.</th>
-                                    <th class="px-1 py-2 text-center text-purple-600 ${app.isAdmin ? '' : 'hidden'}">Real</th>
-                                    <th class="px-1 py-2 text-center">Stock</th>
-                                    <th class="px-1 py-2">Remarks</th>
-                                    <th class="px-2 py-2 text-right">Actions</th>
+                                    <th class="px-2 py-3 w-10 text-center">#</th>
+                                    <th class="px-2 py-3 w-10 text-center">BT</th>
+                                    <th class="px-2 py-3 w-20 text-center">ID</th>
+                                    <th class="px-3 py-3">Item Name</th>
+                                    <th class="px-2 py-3 text-center text-indigo-500">Batch</th>
+
+                                    <th class="px-2 py-3 w-16 text-center">Sup ID</th>
+                                    <th class="px-2 py-3 w-14 text-center">Unit</th>
+                                    <th class="px-2 py-3 text-center">Cost</th>
+                                    <th class="px-2 py-3 text-center">MRP</th>
+                                    <th class="px-2 py-3 text-center text-emerald-600 ${app.isAdmin ? '' : 'hidden'}">Exp.</th>
+                                    <th class="px-2 py-3 text-center text-purple-600 ${app.isAdmin ? '' : 'hidden'}">Real</th>
+                                    <th class="px-2 py-3 text-center">Stock</th>
+                                    <th class="px-2 py-3">Remarks</th>
+                                    <th class="px-3 py-3 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="items-table-body" class="divide-y divide-gray-100">
@@ -342,7 +340,7 @@ var views = window.views = {
 
         views._loadingItems = false;
         if (items.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="15" class="text-center py-12 text-gray-400">
+            tbody.innerHTML = `<tr><td colspan="14" class="text-center py-12 text-gray-400">
                 <i class="fa-solid fa-magnifying-glass text-3xl mb-3 opacity-20 block"></i>
                 No items found for "${q || supFilter}".<br>
                 <button onclick="document.getElementById('item-sup-search').value=''; document.getElementById('global-search').value=''; views.loadItemsTable();" class="mt-4 text-primary font-bold text-xs underline">Clear All Searches</button>
@@ -372,49 +370,45 @@ var views = window.views = {
 
             return `
                 <tr class="bg-white border-b hover:bg-gray-50 transition-colors group">
-                    <td class="px-1 py-2 text-gray-400 font-mono text-[10px] text-center">${index + 1}</td>
-                    <td class="px-1 py-2 text-gray-400 font-mono text-center">
-                        <button onclick="views.toggleItemBatches('${item.itemId}', this)" class="w-5 h-5 rounded hover:bg-indigo-50 text-indigo-400 hover:text-indigo-600 transition-all">
-                            <i class="fa-solid fa-plus text-[9px] transition-transform duration-200"></i>
+                    <td class="px-2 py-3 text-gray-400 font-mono text-[11.5px] text-center">${index + 1}</td>
+                    <td class="px-2 py-3 text-gray-400 font-mono text-center">
+                        <button onclick="views.toggleItemBatches('${item.itemId}', this)" class="w-6 h-6 rounded hover:bg-indigo-50 text-indigo-400 hover:text-indigo-600 transition-all">
+                            <i class="fa-solid fa-plus text-[10px] transition-transform duration-200"></i>
                         </button>
                     </td>
-                    <td class="px-1 py-2 font-medium text-gray-900 text-center text-[10px]">${item.itemId}</td>
-                    <td class="px-2 py-2 min-w-[100px]">
-                        <div class="font-bold text-gray-700 text-[10px] leading-tight">${item.itemName}</div>
-                        ${item.useBatch ? '<span class="text-[7px] bg-indigo-100 text-indigo-700 px-1 rounded font-black uppercase tracking-tighter">Batch Master</span>' : ''}
+                    <td class="px-2 py-3 font-medium text-gray-900 text-center text-[11.5px]">${item.itemId}</td>
+                    <td class="px-3 py-3 min-w-[120px]">
+                        <div class="font-bold text-gray-700 text-[12px] leading-tight">${item.itemName}</div>
+                        ${item.useBatch ? '<span class="text-[8.5px] bg-indigo-100 text-indigo-700 px-1.5 rounded font-black uppercase tracking-tighter">Batch Master</span>' : ''}
                     </td>
-                    <td class="px-1 py-2 text-center">
-                        <span class="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[9px] font-bold">${item.batchId || '-'}</span>
+                    <td class="px-2 py-3 text-center">
+                        <span class="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[10.5px] font-bold">${item.batchId || '-'}</span>
                     </td>
-                    <td class="px-1 py-2 text-center">
-                        <div class="flex justify-center">
-                            <svg class="barcode-svg" data-item-id="${item.itemId}"></svg>
-                        </div>
+
+                    <td class="px-2 py-3 text-gray-500 w-16 text-center text-[11.5px]">${item.supplierId || '-'}</td>
+                    <td class="px-2 py-3 w-14 text-center"><span class="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[10.5px] font-bold">${item.unit}</span></td>
+                    <td class="px-2 py-3 font-mono text-gray-600 text-[10.5px] text-center">${utils.formatCurrency(item.costPrice)}</td>
+                    <td class="px-2 py-3 font-mono font-bold text-gray-800 text-[11.5px] text-center">${utils.formatCurrency(item.listPrice)}</td>
+                    <td class="px-2 py-3 text-center ${app.isAdmin ? '' : 'hidden'}">
+                        <span class="text-[10.5px] font-bold text-emerald-600">${expMargin.toFixed(1)}%</span>
                     </td>
-                    <td class="px-1 py-2 text-gray-500 w-12 text-center text-[10px]">${item.supplierId || '-'}</td>
-                    <td class="px-1 py-2 w-10 text-center"><span class="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[9px] font-bold">${item.unit}</span></td>
-                    <td class="px-1 py-2 font-mono text-gray-600 text-[9px] text-center">${utils.formatCurrency(item.costPrice)}</td>
-                    <td class="px-1 py-2 font-mono font-bold text-gray-800 text-[9px] text-center">${utils.formatCurrency(item.listPrice)}</td>
-                    <td class="px-1 py-2 text-center ${app.isAdmin ? '' : 'hidden'}">
-                        <span class="text-[9px] font-bold text-emerald-600">${expMargin.toFixed(1)}%</span>
+                    <td class="px-2 py-3 text-center ${app.isAdmin ? '' : 'hidden'}">
+                        <span class="text-[10.5px] font-bold ${realMargin >= expMargin ? 'text-purple-600' : 'text-orange-500'}">${realMargin.toFixed(1)}%</span>
                     </td>
-                    <td class="px-1 py-2 text-center ${app.isAdmin ? '' : 'hidden'}">
-                        <span class="text-[9px] font-bold ${realMargin >= expMargin ? 'text-purple-600' : 'text-orange-500'}">${realMargin.toFixed(1)}%</span>
+                    <td class="px-2 py-3 text-center">
+                        <span class="${(item.reorderLevel && (item.reorderLevel > 0)) ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'} px-1.5 py-0.5 rounded-full text-[10.5px] font-bold">${item.reorderLevel || 0}</span>
                     </td>
-                    <td class="px-1 py-2 text-center">
-                        <span class="${(item.reorderLevel && (item.reorderLevel > 0)) ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'} px-1.5 py-0.5 rounded-full text-[9px] font-bold">${item.reorderLevel || 0}</span>
+                    <td class="px-2 py-3">
+                        <div class="text-[10.5px] text-indigo-600 font-medium max-w-[120px] truncate leading-tight" title="${item.remarks || ''}">${item.remarks || '<span class="text-gray-200">-</span>'}</div>
                     </td>
-                    <td class="px-1 py-2">
-                        <div class="text-[9px] text-indigo-600 font-medium max-w-[80px] truncate leading-tight" title="${item.remarks || ''}">${item.remarks || '<span class="text-gray-200">-</span>'}</div>
-                    </td>
-                    <td class="px-2 py-2 text-right space-x-1 whitespace-nowrap">
+                    <td class="px-3 py-3 text-right space-x-1 whitespace-nowrap">
                         <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.editItem('${item.itemId}')); } else { views.editItem('${item.itemId}'); }" class="text-blue-600 hover:text-blue-900 ${app.isAdmin ? '' : 'hidden'}" title="Edit Item"><i class="fa-solid fa-pen-to-square p-1 bg-blue-50 rounded"></i></button>
-                        <button onclick="views.printBarcode('${item.itemId}')" class="text-emerald-500 hover:text-emerald-700" title="Print Barcode"><i class="fa-solid fa-barcode p-1 bg-emerald-50 rounded"></i></button>
+
                         <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.deleteItem('${item.itemId}')); } else { views.deleteItem('${item.itemId}'); }" class="text-red-500 hover:text-red-700 ${app.isAdmin ? '' : 'hidden'}" title="Delete Item"><i class="fa-solid fa-trash p-1 bg-red-50 rounded"></i></button>
                     </td>
                 </tr>
                 <tr id="item-batches-row-${item.itemId.replace(/[^a-zA-Z0-9]/g, '_')}" class="hidden bg-gray-50/30">
-                    <td colspan="15" class="p-0">
+                    <td colspan="14" class="p-0">
                         <div class="px-8 py-4 border-l-4 border-amber-400 m-2 bg-white rounded-r-xl shadow-inner animate-fade-in">
                             <div id="item-batches-content-${item.itemId.replace(/[^a-zA-Z0-9]/g, '_')}">
                                 <div class="flex items-center gap-2 text-amber-500">
@@ -431,7 +425,7 @@ var views = window.views = {
         // Table Status Footer
         const statusRow = `
             <tr class="bg-gray-50/50">
-                <td colspan="15" class="px-6 py-4 text-center">
+                <td colspan="14" class="px-6 py-4 text-center">
                     <div class="flex items-center justify-center gap-4 text-xs font-bold">
                         <span class="text-gray-400 uppercase tracking-widest">Showing ${items.length} of ${totalCnt} items</span>
                         ${(q || supFilter) ? `<span class="bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Search results for "${q || supFilter}"</span>` : ''}
@@ -443,24 +437,7 @@ var views = window.views = {
         tbody.innerHTML += statusRow;
 
 
-        // Generate barcodes after rendering
-        setTimeout(() => {
-            document.querySelectorAll('.barcode-svg').forEach(svg => {
-                const itemId = svg.getAttribute('data-item-id');
-                try {
-                    JsBarcode(svg, itemId, {
-                        format: "CODE128",
-                        width: 1,
-                        height: 20,
-                        displayValue: true,
-                        fontSize: 10,
-                        margin: 0
-                    });
-                } catch (e) {
-                    console.error('Barcode generation error:', e);
-                }
-            });
-        }, 50);
+
     },
 
     toggleItemBatches: async (itemId, btn) => {
@@ -665,459 +642,6 @@ var views = window.views = {
         }
     },
 
-    printBarcode: async (itemId) => {
-        const item = await db.item_master.get(itemId) || await db.item_master.get(Number(itemId));
-        if (!item) {
-            utils.showNotification('Item not found', 'error');
-            return;
-        }
-
-        // Create a print window with barcode
-        const printWindow = window.open('', '_blank', 'width=300,height=200');
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Barcode - ${item.itemId}</title>
-                <script src="lib/jsbarcode.all.min.js"></script>
-                <style>
-                    body {
-                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        justify-content: center;
-                        margin: 0;
-                        padding: 0;
-                        min-height: 100vh;
-                        background: white;
-                    }
-                    .barcode-container {
-                        text-align: center;
-                        padding: 10px;
-                        border: 1px solid #eee;
-                        width: fit-content;
-                        background: white;
-                    }
-                    h3 {
-                        margin: 0 0 2px 0;
-                        font-size: 11px;
-                        font-weight: 700;
-                        text-transform: uppercase;
-                        max-width: 150px;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
-                    }
-                    p {
-                        margin: 1px 0;
-                        font-size: 11px;
-                        color: #000;
-                        font-weight: 700;
-                    }
-                    .price {
-                        font-size: 14px;
-                        font-weight: 800;
-                        margin-top: 2px;
-                    }
-                    svg {
-                        margin: 2px 0;
-                        max-width: 100%;
-                    }
-                    @media print {
-                        @page {
-                            margin: 0;
-                        }
-                        body {
-                            padding: 0;
-                            min-height: auto;
-                        }
-                        .barcode-container {
-                            border: none;
-                        }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="barcode-container">
-                    <h3>${item.itemName}</h3>
-                    <p>${item.itemId}</p>
-                    <svg id="barcode"></svg>
-                    <p class="price">Rs. ${parseFloat(item.listPrice).toFixed(2)}</p>
-                </div>
-                <script>
-                    JsBarcode("#barcode", "${item.itemId}", {
-                        format: "CODE128",
-                        width: 1.2,
-                        height: 35,
-                        displayValue: false,
-                        margin: 0
-                    });
-                    setTimeout(() => {
-                        window.print();
-                    }, 50);
-                </script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-    },
-
-    printAllBarcodes: async () => {
-        let items = await db.item_master.toArray();
-        // Filter out items with no name or name "0"
-        items = items.filter(item => item.itemName && item.itemName.toString().trim() !== "" && item.itemName.toString().trim() !== "0");
-
-        if (items.length === 0) {
-            utils.showNotification('No items with valid names to print', 'warning');
-            return;
-        }
-
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Print All Barcodes</title>
-                <script src="lib/jsbarcode.all.min.js"></script>
-                <style>
-                    body {
-                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                        margin: 0;
-                        padding: 8px; /* Slightly less padding */
-                        background: white;
-                    }
-                    .grid-container {
-                        display: grid;
-                        grid-template-columns: repeat(5, 1fr); /* 5 Columns */
-                        gap: 2px; /* Minimal gap */
-                        page-break-inside: avoid;
-                        width: 100%;
-                    }
-                    .barcode-card {
-                        border: 1px dashed #ccc;
-                        padding: 1px;
-                        text-align: center;
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        justify-content: center;
-                        height: 60px; /* Reduced height to fit 17 rows */
-                        box-sizing: border-box;
-                        overflow: hidden;
-                    }
-                    h3 {
-                        margin: 0 0 1px 0;
-                        font-size: 7px; /* Smaller font for 5 cols */
-                        font-weight: 700;
-                        text-transform: uppercase;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
-                        width: 95%; /* Constrain width */
-                        line-height: 1.1;
-                    }
-                    p {
-                        margin: 0;
-                        font-size: 8px; /* Slightly larger ID font */
-                        color: #000;
-                        font-weight: 800; /* Bolded ID */
-                    }
-                    .price {
-                        font-size: 10px; /* Slightly larger price font */
-                        font-weight: 800;
-                        margin-top: 1px;
-                    }
-                    svg {
-                        max-width: 95%;
-                        height: 18px; /* Smaller barcode height */
-                        margin: 1px 0;
-                    }
-                    @media print {
-                        @page { size: A4; margin: 4mm; }
-                        body { padding: 0; }
-                        .barcode-card { 
-                            border: 0.5px solid #ccc;
-                            height: auto;
-                            min-height: 60px; /* Minimum height for print */
-                            page-break-inside: avoid;
-                        }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="grid-container">
-                    ${items.map(item => `
-                        <div class="barcode-card">
-                            <h3>${item.itemName.substring(0, 18)}${item.itemName.length > 18 ? '...' : ''}</h3>
-                            <p>${item.itemId}</p>
-                            <svg class="barcode" data-id="${item.itemId}"></svg>
-                            <p class="price">Rs. ${parseFloat(item.listPrice).toFixed(2)}</p>
-                        </div>
-                    `).join('')}
-                </div>
-                <script>
-                    window.onload = function() {
-                        const barcodes = document.querySelectorAll('.barcode');
-                        barcodes.forEach(svg => {
-                            const id = svg.getAttribute('data-id');
-                            try {
-                                JsBarcode(svg, id, {
-                                    format: "CODE128",
-                                    width: 1.0,
-                                    height: 25,
-                                    displayValue: false,
-                                    margin: 0,
-                                    fontSize: 9
-                                });
-                            } catch(e) { console.error(e); }
-                        });
-                        
-                        setTimeout(() => {
-                            window.print();
-                        }, 100);
-                    }
-                </script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-    },
-
-    // --- BARCODE SELECTION LOGIC ---
-    openBarcodeSelectionModal: async () => {
-        const modal = document.getElementById('barcode-select-modal');
-        const content = document.getElementById('barcode-select-content');
-        const listContainer = document.getElementById('barcode-selection-list');
-
-        // Reset state
-        window.selectedBarcodes = [];
-        document.getElementById('barcode-selected-count').innerText = '0 selected';
-
-        // Load items
-        const items = await db.item_master.toArray();
-        window.barcodeSelectionItems = items; // Store for filtering
-
-        views.renderBarcodeSelectionList(items);
-
-        modal.classList.remove('hidden');
-        setTimeout(() => {
-            modal.classList.remove('opacity-0');
-            content.classList.remove('scale-95');
-            content.classList.add('scale-100');
-        }, 10);
-    },
-
-    closeBarcodeSelectionModal: () => {
-        const modal = document.getElementById('barcode-select-modal');
-        const content = document.getElementById('barcode-select-content');
-        content.classList.remove('scale-100');
-        content.classList.add('scale-95');
-        modal.classList.add('opacity-0');
-        setTimeout(() => modal.classList.add('hidden'), 200);
-    },
-
-    filterBarcodeSelection: (query) => {
-        const q = query.toLowerCase();
-        const filtered = window.barcodeSelectionItems.filter(i =>
-            String(i.itemId).toLowerCase().includes(q) ||
-            String(i.itemName).toLowerCase().includes(q)
-        );
-        views.renderBarcodeSelectionList(filtered);
-    },
-
-    renderBarcodeSelectionList: (items) => {
-        const listContainer = document.getElementById('barcode-selection-list');
-        if (items.length === 0) {
-            listContainer.innerHTML = '<p class="text-center text-gray-400 py-4">No items found</p>';
-            return;
-        }
-
-        // Limit render count
-        const MAX_RENDER = 50;
-        const displayItems = items.slice(0, MAX_RENDER);
-
-        listContainer.innerHTML = displayItems.map(item => {
-            // Check if already selected
-            const isSelected = window.selectedBarcodes && window.selectedBarcodes.includes(item.itemId);
-            return `
-            <label class="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:bg-indigo-50 cursor-pointer transition-colors group select-none">
-                <input type="checkbox" value="${item.itemId}" 
-                    class="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300"
-                    ${isSelected ? 'checked' : ''}
-                    onchange="views.toggleBarcodeSelection('${item.itemId}', this)">
-                <div class="flex-1">
-                    <div class="font-bold text-gray-800 text-sm group-hover:text-indigo-700">${item.itemName}</div>
-                    <div class="text-xs text-gray-400 font-mono">${item.itemId} • Rs. ${item.listPrice}</div>
-                </div>
-            </label>
-            `;
-        }).join('');
-
-        if (items.length > MAX_RENDER) {
-            listContainer.innerHTML += `
-               <div class="text-center py-4 text-sm text-gray-500 italic border-t border-gray-100 mt-2">
-                    Showing top ${MAX_RENDER} results. Use search to find others.
-               </div>
-            `;
-        }
-    },
-
-    toggleBarcodeSelection: (itemId, checkbox) => {
-        if (!window.selectedBarcodes) window.selectedBarcodes = [];
-
-        if (checkbox.checked) {
-            if (window.selectedBarcodes.length >= 5) {
-                checkbox.checked = false;
-                utils.showNotification('Maximum 5 items allowed per page', 'warning');
-                return;
-            }
-            window.selectedBarcodes.push(itemId);
-        } else {
-            window.selectedBarcodes = window.selectedBarcodes.filter(id => id !== itemId);
-        }
-        document.getElementById('barcode-selected-count').innerText = `${window.selectedBarcodes.length} selected`;
-    },
-
-    printSelectedBarcodesAction: async () => {
-        if (!window.selectedBarcodes || window.selectedBarcodes.length === 0) {
-            utils.showNotification('Please select at least 1 item', 'error');
-            return;
-        }
-
-        const selectedIds = window.selectedBarcodes;
-        const allItems = await db.item_master.toArray();
-        const selectedItems = selectedIds.map(id => allItems.find(i => i.itemId == id)).filter(Boolean); // Ensure valid items
-
-        // We need exactly 5 columns. If < 5 selected, fill with null.
-        const columns = [...selectedItems];
-        while (columns.length < 5) {
-            columns.push(null);
-        }
-
-        // We need 17 rows
-        const rows = Array.from({ length: 17 });
-
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Selected Items Barcodes</title>
-                <script src="lib/jsbarcode.all.min.js"></script>
-                <style>
-                    body {
-                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                        margin: 0;
-                        padding: 8px; 
-                        background: white;
-                    }
-                    .grid-container {
-                        display: grid;
-                        grid-template-columns: repeat(5, 1fr); /* 5 Columns fixed */
-                        gap: 2px; 
-                        width: 100%;
-                    }
-                    .barcode-card {
-                        border: 1px dashed #ccc;
-                        padding: 1px;
-                        text-align: center;
-                        display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        justify-content: center;
-                        height: 60px; /* Reduced for 17 rows */
-                        box-sizing: border-box;
-                        overflow: hidden;
-                    }
-                    .empty-card {
-                        border: none;
-                    }
-                    h3 {
-                        margin: 0 0 1px 0;
-                        font-size: 7px;
-                        font-weight: 700;
-                        text-transform: uppercase;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
-                        width: 95%;
-                        line-height: 1.1;
-                    }
-                    p {
-                        margin: 0;
-                        font-size: 8px;
-                        color: #000;
-                        font-weight: 800;
-                    }
-                    .price {
-                        font-size: 10px;
-                        font-weight: 800;
-                        margin-top: 1px;
-                    }
-                    svg {
-                        max-width: 95%;
-                        height: 18px;
-                        margin: 1px 0;
-                    }
-                    @media print {
-                        @page { size: A4; margin: 4mm; }
-                        body { padding: 0; }
-                        .barcode-card { 
-                            border: 0.5px solid #ccc;
-                            height: auto;
-                            min-height: 59px; 
-                            page-break-inside: avoid;
-                        }
-                        .empty-card { border: none !important; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="grid-container">
-                    ${rows.map(() => {
-            // For each row, render 5 columns
-            return columns.map(item => {
-                if (!item) return '<div class="barcode-card empty-card"></div>';
-                return `
-                                <div class="barcode-card">
-                                    <h3>${item.itemName.substring(0, 18)}${item.itemName.length > 18 ? '...' : ''}</h3>
-                                    <p>${item.itemId}</p>
-                                    <svg class="barcode" data-id="${item.itemId}"></svg>
-                                    <p class="price">Rs. ${parseFloat(item.listPrice).toFixed(2)}</p>
-                                </div>
-                            `;
-            }).join('');
-        }).join('')}
-                </div>
-                <script>
-                    window.onload = function() {
-                        const barcodes = document.querySelectorAll('.barcode');
-                        barcodes.forEach(svg => {
-                            const id = svg.getAttribute('data-id');
-                            try {
-                                JsBarcode(svg, id, {
-                                    format: "CODE128",
-                                    width: 1.0,
-                                    height: 25,
-                                    displayValue: false,
-                                    margin: 0,
-                                    fontSize: 9
-                                });
-                            } catch(e) { console.error(e); }
-                        });
-                        
-                        setTimeout(() => {
-                            window.print();
-                        }, 100);
-                    }
-                </script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-        views.closeBarcodeSelectionModal();
-    },
 
     importItemsFromCSV: (input) => {
         if (!app.isAdmin) {
@@ -1269,7 +793,7 @@ var views = window.views = {
             'MRP': item.listPrice,
             'Reorder Level': item.reorderLevel,
             'Supplier ID': item.supplierId,
-            'Barcode': item.itemId // Often just the ID
+
         }));
 
         // Convert to CSV
