@@ -12,9 +12,12 @@ const ASSETS_TO_CACHE = [
     './lib/papaparse.min.js',
     './lib/jsbarcode.all.min.js',
     './lib/tailwind.js',
-    // External CDNs that we want to cache
-    'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+Sinhala:wght@400;600;700&display=swap',
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
+    './lib/jspdf.umd.min.js',
+    './lib/jspdf.plugin.autotable.min.js',
+    './css/fontawesome/all.min.css',
+    './css/webfonts/fa-solid-900.woff2',
+    './css/webfonts/fa-brands-400.woff2',
+    './css/webfonts/fa-regular-400.woff2'
 ];
 
 // Install Event
@@ -38,16 +41,20 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Fetch Event - Network First Strategy
+// Fetch Event - Cache First Strategy for Assets
 self.addEventListener('fetch', (event) => {
-    // Skip non-GET requests
     if (event.request.method !== 'GET') return;
 
-    // Use a Network First strategy for all assets
     event.respondWith(
-        fetch(event.request)
-            .then((networkResponse) => {
-                // If successful, clone and store in cache
+        caches.match(event.request).then((cachedResponse) => {
+            if (cachedResponse) {
+                // Return cached response immediately
+                return cachedResponse;
+            }
+
+            // If not in cache, fetch from network
+            return fetch(event.request).then((networkResponse) => {
+                // If successful, cache it for next time
                 if (networkResponse.status === 200) {
                     const responseClone = networkResponse.clone();
                     caches.open(CACHE_NAME).then((cache) => {
@@ -55,15 +62,10 @@ self.addEventListener('fetch', (event) => {
                     });
                 }
                 return networkResponse;
-            })
-            .catch(() => {
-                // If network fails, try cache
-                return caches.match(event.request).then((cachedResponse) => {
-                    if (cachedResponse) return cachedResponse;
-                    
-                    // Fallback for offline if both fail
-                    console.log('Fetch failed, and no cache available.');
-                });
-            })
+            });
+        }).catch(() => {
+            // Fallback if both fail
+            console.log('Fetch failed, and no cache available.');
+        })
     );
 });

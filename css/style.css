@@ -1,5 +1,12 @@
+/* Fonts */
+@font-face {
+    font-family: 'Abhaya Libre';
+    src: url('../AbhayaLibre-Regular.ttf') format('truetype');
+}
+
 /* Global Styles */
 body {
+    font-family: 'Outfit', 'Noto Sans Sinhala', 'Abhaya Libre', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
