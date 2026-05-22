@@ -4326,6 +4326,10 @@ var views = window.views = {
                     </button>
                     ` : ''}
 
+                    <button onclick="views.downloadReceiptAsImage('${s.billNo}')" class="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 p-1 rounded transition-colors" title="WhatsApp / Download Image">
+                        <i class="fa-brands fa-whatsapp"></i>
+                    </button>
+
                     <button onclick="views.reprintBillByNumber('${s.billNo}')" class="text-emerald-600 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 p-1 rounded transition-colors" title="Reprint Bill">
                         <i class="fa-solid fa-print"></i>
                     </button>
@@ -5138,6 +5142,305 @@ var views = window.views = {
         } catch (err) {
             console.error('Reprint error:', err);
             utils.showNotification('Error reprinting bill: ' + err.message, 'error');
+        }
+    },
+
+    downloadReceiptAsImage: async (billNumber = null) => {
+        let searchBillNo = billNumber;
+
+        // If no bill number provided, prompt the user
+        if (!searchBillNo) {
+            const billNo = prompt('Enter Bill Number to Download Image:\n(e.g., INV2602000001 or SR2602000001)');
+            if (!billNo || billNo.trim() === '') return;
+            searchBillNo = billNo.trim();
+        }
+
+        try {
+            // Find all sales records with this bill number
+            const salesRecords = await db.sales.where('billNo').equals(searchBillNo).toArray();
+
+            if (salesRecords.length === 0) {
+                utils.showNotification('Bill not found: ' + searchBillNo, 'error');
+                return;
+            }
+
+            utils.showNotification('Generating receipt image...', 'info');
+
+            // Group items by bill number (should all be the same)
+            const firstRecord = salesRecords[0];
+            const saleDate = firstRecord.date;
+            const saleTime = firstRecord.time || '--:-- --';
+            const paymentMethod = firstRecord.method || 'Cash';
+            const customerName = firstRecord.customer || 'Walk-in';
+            const paymentStatus = firstRecord.paymentStatus || 'Paid';
+
+            // Retrieve stored meta-data if available (from version 22+)
+            const billDiscountStored = firstRecord.billDiscount || 0;
+            const paidAmountStored = firstRecord.paidAmount; // Might be undefined for old records
+
+            // Calculate totals
+            let itemsSubtotal = 0;
+            let totalDiscountSum = 0;
+            let totalQty = 0;
+            let finalTotal = 0;
+
+            // Calculate bill-wide totals first for accurate reconstruction
+            const billFinalTotal = salesRecords.reduce((sum, s) => sum + (s.total || 0), 0);
+            const billOriginalSubtotal = billFinalTotal + billDiscountStored;
+
+            // Build cart-like structure from sales records
+            const cartItems = salesRecords.map(sale => {
+                const itemTotal = sale.total || 0;
+                const itemMergedDiscount = sale.discount || 0;
+                
+                itemsSubtotal += (sale.qty * sale.mrp);
+                totalQty += sale.qty;
+
+                let itemLevelDiscount = 0;
+
+                // LOGIC: Check if new 'itemDiscount' field exists
+                if (sale.itemDiscount !== undefined) {
+                    itemLevelDiscount = sale.itemDiscount;
+                } else {
+                    // FALLBACK: Mathematical Reconstruction for old records
+                    if (billOriginalSubtotal > 0 && billDiscountStored > 0) {
+                        const factor = billFinalTotal / billOriginalSubtotal;
+                        const reconstructedOriginalItemTotal = itemTotal / factor;
+                        itemLevelDiscount = (sale.qty * sale.mrp) - reconstructedOriginalItemTotal;
+                    } else {
+                        itemLevelDiscount = itemMergedDiscount;
+                    }
+                }
+
+                totalDiscountSum += itemLevelDiscount;
+                finalTotal += itemTotal; // Accumulated for the final display total (should match billFinalTotal)
+                const originalItemTotal = (sale.qty * sale.mrp) - itemLevelDiscount;
+
+                return {
+                    name: utils.cleanItemName(sale.itemName),
+                    qty: sale.qty,
+                    unit: sale.unit || 'Pcs',
+                    price: sale.mrp,
+                    discount: itemLevelDiscount / sale.qty, // Only item-level per unit
+                    total: originalItemTotal
+                };
+            });
+
+            // Calculate Bill Discount separately for display
+            const billDiscount = billDiscountStored;
+            const itemsDiscount = totalDiscountSum; // Now accurately represents sum of item-level discounts
+
+            // Handle Paid Amount and Balance for display
+            let displayPaid = 0;
+            if (paidAmountStored !== undefined) {
+                displayPaid = paidAmountStored;
+            } else {
+                // Legacy fallback: Assume Paid bills were fully paid
+                displayPaid = (paymentStatus === 'Paid') ? finalTotal : 0;
+            }
+            const displayBalance = displayPaid - finalTotal;
+
+            // Create temporary container for html2canvas
+            const tempContainer = document.createElement('div');
+            tempContainer.id = 'temp-receipt-image-container';
+            // Styling it exactly like thermal receipt width, off-screen
+            tempContainer.style.position = 'absolute';
+            tempContainer.style.left = '-9999px';
+            tempContainer.style.top = '-9999px';
+            tempContainer.style.width = '350px'; // standard width for crisp image
+            tempContainer.style.background = '#ffffff';
+            tempContainer.style.color = '#000000';
+            tempContainer.style.padding = '20px 24px';
+            tempContainer.style.boxSizing = 'border-box';
+            tempContainer.style.fontFamily = "'Outfit', 'Noto Sans Sinhala', 'Arial', sans-serif";
+            tempContainer.style.fontSize = '12px';
+            tempContainer.style.lineHeight = '1.3';
+            tempContainer.style.overflow = 'visible';
+
+            // Generate Receipt HTML
+            const receiptHTML = `
+                <div style="width: 100%; padding: 0; margin: 0; background: #ffffff;">
+                    <div style="text-align: center; margin-bottom: 8px;">
+                        <h1 style="font-size: 1.5em; margin: 0 0 3px 0; font-weight: bold; text-transform: uppercase; color: #000000; letter-spacing: 0.5px;">SAVI SHAKTHI<br>HARDWARE</h1>
+                        <p style="margin: 0; font-size: 0.85em; color: #000000; font-weight: 500;">5th Canel, Srawasthipura, Anuradhapura</p>
+                        <p style="margin: 1px 0 0 0; font-size: 0.95em; font-weight: bold; color: #000000;">Phone: 076 181 8748</p>
+                        <div style="border-bottom: 2px solid #000000; margin: 8px 0;"></div>
+                        
+                        <div style="font-size: 0.95em; text-align: left; font-weight: bold; color: #000000;">
+                            <table style="width: 100%; border-collapse: collapse; margin-bottom: 3px; color: #000000;">
+                                <tr>
+                                    <td style="text-align: left; font-size: 1.0em; font-weight: bold; vertical-align: middle; padding: 0;">
+                                        Bill ID: ${searchBillNo}
+                                    </td>
+                                    <td style="text-align: right; vertical-align: middle; padding: 0;">
+                                        <div style="display: inline-block; border: 1.5px solid #000000; border-radius: 3px; padding: 4px 6px; font-size: 9px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.2; box-sizing: border-box; color: #000000; text-align: center; white-space: nowrap;">
+                                            Receipt Image
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                            <div style="margin-top: 3px;">Ref: ${customerName}</div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.8em; text-align: left; margin-top: 3px; color: #000000; font-weight: 500;">
+                            <span>Date: ${saleDate}</span>
+                            <span>Time: ${saleTime}</span>
+                        </div>
+                        <div style="font-size: 0.9em; text-align: left; margin-top: 3px; font-weight: bold; color: #000000;">
+                            <div>Method: ${paymentMethod === 'Mixed' ? 'MIXED' : paymentMethod} ${paymentStatus === 'Pending' ? '(PENDING)' : '(PAID)'}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Main Header Table (fixed layout for consistent column widths) -->
+                    <table style="width: 100%; font-size: 0.95em; border-collapse: collapse; table-layout: fixed; color: #000000;">
+                        <thead>
+                            <tr style="border-bottom: 1.5px solid #000000; border-top: 1.5px solid #000000;">
+                                <th style="padding: 7px 0; text-align: left; width: 52%; font-weight: bold; vertical-align: middle; line-height: 1.2;">ITEM</th>
+                                <th style="padding: 7px 0; text-align: center; width: 15%; font-weight: bold; vertical-align: middle; line-height: 1.2;">QTY</th>
+                                <th style="padding: 7px 0; text-align: right; width: 33%; font-weight: bold; vertical-align: middle; line-height: 1.2;">AMT</th>
+                            </tr>
+                        </thead>
+                    </table>
+
+                    <!-- Item List Container -->
+                    <div style="margin-bottom: 8px;">
+                        ${cartItems.map(item => {
+                            const hasDiscount = (item.discount || 0) > 0;
+                            return `
+                                <div style="margin-top: 4px; page-break-inside: avoid;">
+                                    <!-- Item Name rendered as a full-width block-level div to prevent html2canvas table-layout colspan bugs -->
+                                    <div style="padding: 6px 0 2px 0; font-weight: bold; line-height: 1.15; font-size: 1.0em; color: #000000; word-break: break-word;">
+                                        ${String(item.name).toUpperCase()}
+                                    </div>
+                                    
+                                    <!-- Detail Row Table (identical column widths for precise vertical alignment with the header) -->
+                                    <table style="width: 100%; font-size: 0.95em; border-collapse: collapse; table-layout: fixed; color: #000000;">
+                                        <tbody>
+                                            ${hasDiscount ? `
+                                                <tr>
+                                                    <td style="width: 52%; text-align: left; padding: 0 0 6px 0; font-size: 0.85em; font-weight: 500; vertical-align: top; color: #000000;">
+                                                        <div>${item.qty} ${item.unit} @ ${item.price.toFixed(2)}</div>
+                                                        <div style="font-weight: bold; color: #000000; margin-top: 1px;">Discount: -${((item.discount || 0) * item.qty).toFixed(2)}</div>
+                                                    </td>
+                                                    <td style="width: 15%; text-align: center; font-weight: bold; padding-bottom: 6px; font-size: 1.0em; vertical-align: top; color: #000000;">${item.qty}</td>
+                                                    <td style="width: 33%; text-align: right; font-weight: bold; padding-bottom: 6px; font-size: 1.0em; vertical-align: top; color: #000000;">${item.total.toFixed(2)}</td>
+                                                </tr>
+                                            ` : `
+                                                <tr>
+                                                    <td style="width: 52%; text-align: left; padding: 0 0 6px 0; font-size: 0.85em; font-weight: 500; vertical-align: top; color: #000000;">
+                                                        ${item.qty} ${item.unit} @ ${item.price.toFixed(2)}
+                                                    </td>
+                                                    <td style="width: 15%; text-align: center; font-weight: bold; padding-bottom: 6px; font-size: 1.0em; vertical-align: top; color: #000000;">${item.qty}</td>
+                                                    <td style="width: 33%; text-align: right; font-weight: bold; padding-bottom: 6px; font-size: 1.0em; vertical-align: top; color: #000000;">${item.total.toFixed(2)}</td>
+                                                </tr>
+                                            `}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    
+                    <div style="border-top: 1.5px solid #000000; padding-top: 6px; padding-bottom: 4px; color: #000000;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.95em; margin-bottom: 4px; font-weight: 500;">
+                            <span>Items Subtotal</span>
+                            <span style="font-weight: bold;">${itemsSubtotal.toFixed(2)}</span>
+                        </div>
+                        ${itemsDiscount > 0 ? `
+                        <div style="display: flex; justify-content: space-between; font-size: 0.95em; margin-bottom: 4px; font-weight: 500;">
+                            <span>Items Discount</span>
+                            <span style="font-weight: bold;">-${itemsDiscount.toFixed(2)}</span>
+                        </div>
+                        ` : ''}
+                        ${billDiscount > 0 ? `
+                        <div style="display: flex; justify-content: space-between; font-size: 0.95em; margin-bottom: 4px; font-weight: 500;">
+                            <span>Bill Discount</span>
+                            <span style="font-weight: bold;">-${billDiscount.toFixed(2)}</span>
+                        </div>
+                        ` : ''}
+                        
+                        <div style="border-top: 1.5px solid #000000; border-bottom: 1.5px solid #000000; padding: 8px 0; margin-top: 8px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; line-height: 1.2;">
+                            <span style="font-weight: bold; font-size: 1.35em; color: #000000;">TOTAL</span>
+                            <span style="font-weight: bold; font-size: 1.55em; color: #000000;">${finalTotal.toFixed(2)}</span>
+                        </div>
+ 
+                        <div style="margin-top: 8px; border-bottom: 1.5px dashed #000000; padding-bottom: 8px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 0.95em; margin-bottom: 4px; font-weight: 500;">
+                                <span>Paid Amount</span>
+                                <span style="font-weight: bold;">${displayPaid.toFixed(2)}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 0.95em; font-weight: 500;">
+                                <span>Balance</span>
+                                <span style="font-weight: bold;">${displayBalance.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
+ 
+                    <div style="margin-top: 12px; text-align: center; color: #000000;">
+                        <div style="display: flex; justify-content: center; font-size: 0.85em; font-weight: bold; margin-bottom: 6px;">
+                            <span>Total Items: ${cartItems.length} | Qty: ${totalQty}</span>
+                        </div>
+                        <div style="border-bottom: 1.5px dashed #000000; margin-bottom: 10px;"></div>
+                        
+                        <div style="font-weight: bold; font-size: 0.8em; white-space: nowrap; letter-spacing: 0.5px;">THANK YOU, COME AGAIN!</div>
+                        <div style="margin: 3px 0 0 0; font-size: 0.75em; opacity: 0.95; font-weight: bold;">Software by AMBH Solutions</div>
+                        
+                        <div style="margin: 8px 0 0 0; text-align: center; display: flex; justify-content: center;">
+                            <svg id="temp-barcode-svg" style="max-width: 100%;"></svg>
+                        </div>
+                        <div style="font-family: monospace; font-size: 0.85em; margin-top: 3px; font-weight: bold;">${searchBillNo}</div>
+                    </div>
+                </div>
+            `;
+
+            tempContainer.innerHTML = receiptHTML;
+            document.body.appendChild(tempContainer);
+
+            // Generate barcode inside the temp container
+            try {
+                JsBarcode(tempContainer.querySelector("#temp-barcode-svg"), searchBillNo, {
+                    format: "CODE128",
+                    width: 1.3,
+                    height: 35,
+                    displayValue: false,
+                    margin: 0
+                });
+            } catch (e) {
+                console.error('Temp barcode generation error:', e);
+            }
+
+            // Wait briefly for DOM to process it and then execute html2canvas
+            setTimeout(() => {
+                html2canvas(tempContainer, {
+                    scale: 2, // Double DPI for high resolution
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff'
+                }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    
+                    // Create download link
+                    const link = document.createElement('a');
+                    link.download = `Bill_${searchBillNo}.png`;
+                    link.href = imgData;
+                    document.body.appendChild(link);
+                    link.click();
+                    
+                    // Clean up
+                    document.body.removeChild(link);
+                    document.body.removeChild(tempContainer);
+                    utils.showNotification('Receipt image downloaded successfully!', 'success');
+                }).catch(err => {
+                    console.error('html2canvas rendering error:', err);
+                    utils.showNotification('Failed to generate image: ' + err.message, 'error');
+                    if (document.body.contains(tempContainer)) {
+                        document.body.removeChild(tempContainer);
+                    }
+                });
+            }, 100);
+
+        } catch (err) {
+            console.error('Download receipt image error:', err);
+            utils.showNotification('Error creating receipt image: ' + err.message, 'error');
         }
     },
 
