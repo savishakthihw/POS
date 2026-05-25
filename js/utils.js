@@ -43,7 +43,7 @@ const utils = {
         // If type is error, default duration is 0 (persistent)
         const finalDuration = duration !== null ? duration : (type === 'error' ? 0 : 3000);
 
-        div.className = `fixed top-4 right-4 z-[9999] px-6 py-3 rounded-xl shadow-2xl text-white transform transition-all duration-300 translate-y-[-20px] opacity-0 flex items-center gap-3 min-w-[300px] max-w-md ${type === 'success' ? 'bg-emerald-600' :
+        div.className = `print:hidden fixed top-4 right-4 z-[9999] px-6 py-3 rounded-xl shadow-2xl text-white transform transition-all duration-300 translate-y-[-20px] opacity-0 flex items-center gap-3 min-w-[300px] max-w-md ${type === 'success' ? 'bg-emerald-600' :
             type === 'error' ? 'bg-rose-600' : 'bg-indigo-600'
             }`;
 

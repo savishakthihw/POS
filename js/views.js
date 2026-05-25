@@ -2695,6 +2695,7 @@ var views = window.views = {
         // Setup state for Cart
         window.posCart = [];
         window.posReturnMode = false; // Initialize Return Mode state
+        window.posQuotationMode = false; // Initialize Quotation Mode state
 
         // Cache items for fast search (Force reload to get latest useBatch and prices)
         app.itemCache = await db.item_master.toArray();
@@ -2780,28 +2781,39 @@ var views = window.views = {
                     </div>
 
                     <!-- Quick Access Grid -->
-                    <div class="mb-4 flex justify-between items-center">
-                        <div class="flex items-center gap-4">
-                            <h3 class="text-sm font-bold text-gray-500 uppercase tracking-wide">Fast Moving Items</h3>
+                    <div class="mb-4 flex flex-wrap justify-between items-center gap-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">Fast Moving Items</h3>
                             
                             <!-- Return Mode Toggle -->
-                            <label class="flex items-center gap-2 cursor-pointer bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-100 transition-colors">
-                                <span class="text-xs font-bold text-red-600 uppercase">Return Mode</span>
+                            <label class="flex items-center gap-2 cursor-pointer bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-100 transition-colors" title="Return Mode">
+                                <span class="text-xs font-bold text-red-600 uppercase">Return</span>
                                 <div class="relative inline-block w-10 h-5">
                                     <input type="checkbox" id="return-mode-toggle" class="peer sr-only" onchange="views.toggleReturnMode(this.checked)">
                                     <div class="w-11 h-6 bg-gray-300 rounded-full peer peer-focus:ring-4 peer-focus:ring-red-300 dark:peer-focus:ring-red-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
                                 </div>
                             </label>
 
+                            <!-- Quotation Mode Toggle -->
+                            <label class="flex items-center gap-2 cursor-pointer bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg border border-orange-100 transition-colors" title="Quotation Mode">
+                                <span class="text-xs font-bold text-orange-600 uppercase">Quotation</span>
+                                <div class="relative inline-block w-10 h-5">
+                                    <input type="checkbox" id="quotation-mode-toggle" class="peer sr-only" onchange="views.toggleQuotationMode(this.checked)">
+                                    <div class="w-11 h-6 bg-gray-300 rounded-full peer peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                                </div>
+                            </label>
+
                             <!-- Custom Item Button -->
                             <button onclick="views.openCustomItemModal()" class="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-100 transition-colors text-indigo-700">
                                 <i class="fa-solid fa-pen-to-square"></i>
-                                <span class="text-xs font-bold uppercase">Custom Item</span>
+                                <span class="text-xs font-bold uppercase whitespace-nowrap">Custom Item</span>
                             </button>
                         </div>
 
-                        <button onclick="views.clearCart()" class="text-xs text-red-500 hover:text-red-700 font-medium flex items-center gap-1">
-                            <i class="fa-solid fa-trash"></i> Clear All
+                        <!-- Clear All Button -->
+                        <button onclick="views.clearCart()" class="flex items-center gap-2 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-100 transition-colors text-red-700">
+                            <i class="fa-solid fa-trash"></i>
+                            <span class="text-xs font-bold uppercase whitespace-nowrap">Reset</span>
                         </button>
                     </div>
                     
@@ -3488,6 +3500,11 @@ var views = window.views = {
         window.posReturnMode = enabled;
         const searchInput = document.getElementById('pos-search');
         if (enabled) {
+            // Disable quotation mode if return mode is enabled
+            if (window.posQuotationMode) {
+                document.getElementById('quotation-mode-toggle').checked = false;
+                views.toggleQuotationMode(false);
+            }
             utils.showNotification('RETURN MODE ENABLED', 'warning');
             if (searchInput) {
                 searchInput.classList.add('ring-2', 'ring-red-500', 'border-red-500');
@@ -3495,8 +3512,31 @@ var views = window.views = {
             }
         } else {
             utils.showNotification('Return Mode Disabled');
-            if (searchInput) {
+            if (searchInput && !window.posQuotationMode) {
                 searchInput.classList.remove('ring-2', 'ring-red-500', 'border-red-500');
+                searchInput.placeholder = "🔍 Scan barcode or type item name...";
+            }
+        }
+    },
+
+    toggleQuotationMode: (enabled) => {
+        window.posQuotationMode = enabled;
+        const searchInput = document.getElementById('pos-search');
+        if (enabled) {
+            // Disable return mode if quotation mode is enabled
+            if (window.posReturnMode) {
+                document.getElementById('return-mode-toggle').checked = false;
+                views.toggleReturnMode(false);
+            }
+            utils.showNotification('QUOTATION MODE ENABLED', 'info');
+            if (searchInput) {
+                searchInput.classList.add('ring-2', 'ring-orange-500', 'border-orange-500');
+                searchInput.placeholder = "SEARCH ITEMS FOR QUOTATION...";
+            }
+        } else {
+            utils.showNotification('Quotation Mode Disabled');
+            if (searchInput && !window.posReturnMode) {
+                searchInput.classList.remove('ring-2', 'ring-orange-500', 'border-orange-500');
                 searchInput.placeholder = "🔍 Scan barcode or type item name...";
             }
         }
@@ -3869,11 +3909,11 @@ var views = window.views = {
         const customDateInput = document.getElementById('pos-custom-date');
         const overriddenDate = customDateInput ? customDateInput.value : null;
 
-        // NEW: Standard Numbering (INVYYMMXXXXXX / SRYYMMXXXXXX)
+        // NEW: Standard Numbering (INVYYMMXXXXXX / SRYYMMXXXXXX / QTYYMMXXXXXX)
         const hasReturnItem = window.posCart.some(i => i.qty < 0);
-        const prefix = hasReturnItem ? 'SR' : 'INV';
+        const prefix = window.posQuotationMode ? 'QT' : (hasReturnItem ? 'SR' : 'INV');
         const billNo = await views.getNextBillNo(prefix, overriddenDate);
-        const rawBillId = billNo.replace('INV', '').replace('SR', '');
+        const rawBillId = billNo.replace('INV', '').replace('SR', '').replace('QT', '');
 
         const saleDate = overriddenDate || new Date().toISOString().split('T')[0];
         const saleTime = overriddenDate ? "00:00:01" : new Date().toLocaleTimeString();
@@ -3941,39 +3981,46 @@ var views = window.views = {
             });
 
             // 2. Execute Transaction
-            await db.transaction('rw', db.sales, db.inventory, db.item_batches, db.audit_logs, async () => {
-                await db.sales.bulkAdd(salesData);
+            if (window.posQuotationMode) {
+                await db.transaction('rw', db.quotations, db.audit_logs, async () => {
+                    await db.quotations.bulkAdd(salesData);
+                    await utils.logAction('Quotation', `Quotation ${billNo} processed. Total: ${finalTotal.toFixed(2)}`);
+                });
+            } else {
+                await db.transaction('rw', db.sales, db.inventory, db.item_batches, db.audit_logs, async () => {
+                    await db.sales.bulkAdd(salesData);
 
-                // Update Batches
-                for (const item of window.posCart.filter(i => !i.isCustom && i.batchId)) {
-                    const batchRecord = await db.item_batches.where({ itemId: item.itemId, batchId: item.batchId }).first();
-                    if (batchRecord) {
-                        await db.item_batches.update(batchRecord.id, {
-                            currentStock: (batchRecord.currentStock || 0) - item.qty
-                        });
+                    // Update Batches
+                    for (const item of window.posCart.filter(i => !i.isCustom && i.batchId)) {
+                        const batchRecord = await db.item_batches.where({ itemId: item.itemId, batchId: item.batchId }).first();
+                        if (batchRecord) {
+                            await db.item_batches.update(batchRecord.id, {
+                                currentStock: (batchRecord.currentStock || 0) - item.qty
+                            });
+                        }
                     }
-                }
 
-                // Update Inventory
-                const itemIds = window.posCart.filter(i => !i.isCustom).map(i => i.itemId);
-                if (itemIds.length > 0) {
-                    const invItems = await db.inventory.where('itemId').anyOf(itemIds).toArray();
-                    const updates = invItems.map(invItem => {
-                        const cartItems = window.posCart.filter(ci => ci.itemId === invItem.itemId);
-                        const totalQty = cartItems.reduce((sum, ci) => sum + ci.qty, 0);
-                        const cost = invItem.avgCost || invItem.costPrice || 0;
+                    // Update Inventory
+                    const itemIds = window.posCart.filter(i => !i.isCustom).map(i => i.itemId);
+                    if (itemIds.length > 0) {
+                        const invItems = await db.inventory.where('itemId').anyOf(itemIds).toArray();
+                        const updates = invItems.map(invItem => {
+                            const cartItems = window.posCart.filter(ci => ci.itemId === invItem.itemId);
+                            const totalQty = cartItems.reduce((sum, ci) => sum + ci.qty, 0);
+                            const cost = invItem.avgCost || invItem.costPrice || 0;
 
-                        invItem.sold = (invItem.sold || 0) + totalQty;
-                        invItem.currentStock = (invItem.currentStock || 0) - totalQty;
-                        invItem.stockValue = invItem.currentStock * cost;
-                        return invItem;
-                    });
-                    await db.inventory.bulkPut(updates);
-                }
+                            invItem.sold = (invItem.sold || 0) + totalQty;
+                            invItem.currentStock = (invItem.currentStock || 0) - totalQty;
+                            invItem.stockValue = invItem.currentStock * cost;
+                            return invItem;
+                        });
+                        await db.inventory.bulkPut(updates);
+                    }
 
-                // Audit Log
-                await utils.logAction('Sale', `Bill ${billNo} processed. Total: ${finalTotal.toFixed(2)} (${paymentMethod})`);
-            });
+                    // Audit Log
+                    await utils.logAction('Sale', `Bill ${billNo} processed. Total: ${finalTotal.toFixed(2)} (${paymentMethod})`);
+                });
+            }
 
             // 3. Receipt Generation and Print
             const receiptHTML = `
@@ -3985,7 +4032,8 @@ var views = window.views = {
                         <div style="border-bottom: 2px solid black; margin: 5px 0;"></div>
                         
                         <div style="font-size: 0.85em; text-align: left; font-weight: bold;">
-                            <div>Bill ID: ${billNo}</div>
+                            <div>${window.posQuotationMode ? 'Quotation ID:' : 'Bill ID:'} ${billNo}</div>
+                            ${window.posQuotationMode ? '<div style="font-weight: bold; text-decoration: underline;">Valid for 7 days only</div>' : ''}
                             <div style="margin-top: 1px;">Ref: ${document.getElementById('pos-customer').value.trim() || 'Guest'}</div>
                         </div>
                         <div style="display: flex; justify-content: space-between; font-size: 0.7em; text-align: left; margin-top: 1px;">
@@ -4134,6 +4182,10 @@ var views = window.views = {
                     <div>
                         <h3 class="text-xl font-bold text-gray-800">Sales History</h3>
                         <p class="text-xs text-gray-500">Track and manage past transactions</p>
+                        <div class="mt-2 flex gap-2">
+                            <button onclick="window.salesHistoryView = 'sales'; views.loadSalesTable(document.getElementById('sales-search-input').value, document.getElementById('sales-search-month').value); this.classList.add('bg-indigo-600','text-white'); this.classList.remove('bg-gray-100','text-gray-600'); document.getElementById('tab-quotations').classList.add('bg-gray-100','text-gray-600'); document.getElementById('tab-quotations').classList.remove('bg-indigo-600','text-white');" id="tab-sales" class="px-4 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 text-white transition-colors">Sales</button>
+                            <button onclick="window.salesHistoryView = 'quotations'; views.loadSalesTable(document.getElementById('sales-search-input').value, document.getElementById('sales-search-month').value); this.classList.add('bg-indigo-600','text-white'); this.classList.remove('bg-gray-100','text-gray-600'); document.getElementById('tab-sales').classList.add('bg-gray-100','text-gray-600'); document.getElementById('tab-sales').classList.remove('bg-indigo-600','text-white');" id="tab-quotations" class="px-4 py-1.5 text-xs font-bold rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Quotations</button>
+                        </div>
                     </div>
 
                     <!-- Search Box -->
@@ -4208,17 +4260,19 @@ var views = window.views = {
         if (!tbody) return;
 
         let sales;
+        window.salesHistoryView = window.salesHistoryView || 'sales';
+        const targetStore = window.salesHistoryView === 'quotations' ? db.quotations : db.sales;
 
         // Optimized Data Fetching: Avoid .toArray() on full set
         if (!query && !searchMonth) {
             // Default view: Latest 1000
-            sales = await db.sales.orderBy('date').reverse().limit(1000).toArray();
+            sales = await targetStore.orderBy('date').reverse().limit(1000).toArray();
         } else if (searchMonth && !query) {
             // Month only: Use index
-            sales = await db.sales.where('date').startsWith(searchMonth).reverse().toArray();
+            sales = await targetStore.where('date').startsWith(searchMonth).reverse().toArray();
         } else {
             // Search or combined: Fetch latest 2000 for filtering (memory safety cap)
-            sales = await db.sales.orderBy('date').reverse().limit(2000).toArray();
+            sales = await targetStore.orderBy('date').reverse().limit(2000).toArray();
         }
 
         if (searchMonth) {
@@ -4314,13 +4368,13 @@ var views = window.views = {
                 <td class="px-2 py-3 text-right font-black text-indigo-700 text-sm ${s.paymentStatus === 'Cancelled' ? 'line-through text-gray-400' : ''}">${utils.formatCurrency(s.total)}</td>
                 <td class="px-1 py-3 text-right text-emerald-700 font-bold text-sm ${s.paymentStatus === 'Cancelled' ? 'line-through text-gray-400' : ''}">${utils.formatCurrency(s.profit)}</td>
                 <td class="px-1 py-3 text-right space-x-1 flex justify-end items-center h-full">
-                    ${s.paymentStatus === 'Pending' ? `
+                    ${(s.paymentStatus === 'Pending' && window.salesHistoryView !== 'quotations') ? `
                     <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.settlePayment(${s.id})); } else { views.settlePayment(${s.id}); }" class="text-emerald-500 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 p-1 rounded transition-colors" title="Mark as Paid">
                         <i class="fa-solid fa-check"></i>
                     </button>
                     ` : ''}
                     
-                    ${s.paymentStatus !== 'Cancelled' ? `
+                    ${(s.paymentStatus !== 'Cancelled' && window.salesHistoryView !== 'quotations') ? `
                     <button onclick="views.cancelSale(${s.id})" class="text-orange-500 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 p-1 rounded transition-colors" title="Cancel Sale">
                         <i class="fa-solid fa-ban"></i>
                     </button>
@@ -4334,9 +4388,11 @@ var views = window.views = {
                         <i class="fa-solid fa-print"></i>
                     </button>
 
+                    ${window.salesHistoryView !== 'quotations' ? `
                     <button onclick="views.voidEntireBill('${s.billNo}')" class="text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 p-1 rounded transition-colors" title="Void Entire Bill">
                         <i class="fa-solid fa-trash-can"></i>
                     </button>
+                    ` : ''}
                     
                     <button onclick="views.deleteSale(${s.id})" class="text-gray-400 hover:text-red-700 p-1 ${app.isAdmin ? '' : 'hidden'}" title="Permanently Delete Record">
                         <i class="fa-solid fa-eraser"></i>
@@ -4656,47 +4712,60 @@ var views = window.views = {
 
     deleteSale: async (id) => {
         if (!app.isAdmin) return;
-        if (!confirm('Are you sure you want to delete this sale record? Inventory will be reverted.')) return;
+        const isQuotation = window.salesHistoryView === 'quotations';
+        const msg = isQuotation ? 'Are you sure you want to delete this quotation?' : 'Are you sure you want to delete this sale record? Inventory will be reverted.';
+        if (!confirm(msg)) return;
         if (!utils.verifyDeletePassword()) return;
 
         try {
-            await db.transaction('rw', db.sales, db.inventory, db.item_batches, db.audit_logs, async () => {
-                const sale = await db.sales.get(id);
-                if (!sale) throw new Error('Sale not found');
+            if (isQuotation) {
+                await db.transaction('rw', db.quotations, db.audit_logs, async () => {
+                    const sale = await db.quotations.get(id);
+                    if (!sale) throw new Error('Sale not found');
+                    await db.quotations.delete(id);
+                    await utils.logAction('Quotation Delete', `Deleted Quotation ${sale.billNo} for ${sale.itemName}`);
+                });
+                utils.showNotification('Quotation record deleted');
+                views.initSales();
+            } else {
+                await db.transaction('rw', db.sales, db.inventory, db.item_batches, db.audit_logs, async () => {
+                    const sale = await db.sales.get(id);
+                    if (!sale) throw new Error('Sale not found');
 
-                // 1. Revert Inventory
-                const invItem = await db.inventory.get(sale.itemId);
-                if (invItem) {
-                    const newCurrent = (invItem.currentStock || 0) + sale.qty;
-                    const cost = invItem.avgCost || sale.costPrice || 0;
-                    await db.inventory.update(sale.itemId, {
-                        sold: (invItem.sold || 0) - sale.qty,
-                        currentStock: newCurrent,
-                        stockValue: newCurrent * cost
-                    });
-                }
-
-                // 2. Revert Batch
-                if (sale.batchId) {
-                    const batch = await db.item_batches.where({ itemId: sale.itemId, batchId: sale.batchId }).first();
-                    if (batch) {
-                        await db.item_batches.update(batch.id, {
-                            currentStock: (batch.currentStock || 0) + sale.qty
+                    // 1. Revert Inventory
+                    const invItem = await db.inventory.get(sale.itemId);
+                    if (invItem) {
+                        const newCurrent = (invItem.currentStock || 0) + sale.qty;
+                        const cost = invItem.avgCost || sale.costPrice || 0;
+                        await db.inventory.update(sale.itemId, {
+                            sold: (invItem.sold || 0) - sale.qty,
+                            currentStock: newCurrent,
+                            stockValue: newCurrent * cost
                         });
                     }
-                }
 
-                // 3. Delete Sale
-                await db.sales.delete(id);
+                    // 2. Revert Batch
+                    if (sale.batchId) {
+                        const batch = await db.item_batches.where({ itemId: sale.itemId, batchId: sale.batchId }).first();
+                        if (batch) {
+                            await db.item_batches.update(batch.id, {
+                                currentStock: (batch.currentStock || 0) + sale.qty
+                            });
+                        }
+                    }
 
-                // 4. Audit Log
-                await utils.logAction('Sale Delete', `Deleted Sale Bill ${sale.billNo} for ${sale.itemName}`);
-            });
-            utils.showNotification('Sale record deleted and inventory reverted');
-            views.initSales();
+                    // 3. Delete Sale
+                    await db.sales.delete(id);
+
+                    // 4. Audit Log
+                    await utils.logAction('Sale Delete', `Deleted Sale Bill ${sale.billNo} for ${sale.itemName}`);
+                });
+                utils.showNotification('Sale record deleted and inventory reverted');
+                views.initSales();
+            }
         } catch (err) {
             console.error('Delete Sale Error:', err);
-            utils.showNotification('Error deleting sale: ' + err.message, 'error');
+            utils.showNotification('Error deleting record: ' + err.message, 'error');
         }
     },
 
@@ -4917,7 +4986,8 @@ var views = window.views = {
 
         try {
             // Find all sales records with this bill number
-            const salesRecords = await db.sales.where('billNo').equals(searchBillNo).toArray();
+            const targetStore = searchBillNo.startsWith('QT') ? db.quotations : db.sales;
+            const salesRecords = await targetStore.where('billNo').equals(searchBillNo).toArray();
 
             if (salesRecords.length === 0) {
                 utils.showNotification('Bill not found: ' + searchBillNo, 'error');
@@ -5012,9 +5082,10 @@ var views = window.views = {
                         
                         <div style="font-size: 0.85em; text-align: left; font-weight: bold;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <span>Bill ID: ${searchBillNo}</span>
+                                <span>${searchBillNo.startsWith('QT') ? 'Quotation ID:' : 'Bill ID:'} ${searchBillNo}</span>
                                 <span style="color: #dc2626; font-size: 9px; font-weight: normal; border: 1px solid #dc2626; padding: 0 2px; border-radius: 2px;">REPRINT</span>
                             </div>
+                            ${searchBillNo.startsWith('QT') ? '<div style="font-weight: bold; text-decoration: underline;">Valid for 7 days only</div>' : ''}
                             <div style="margin-top: 1px;">Ref: ${customerName}</div>
                         </div>
                         <div style="display: flex; justify-content: space-between; font-size: 0.7em; text-align: left; margin-top: 1px;">
@@ -5157,7 +5228,8 @@ var views = window.views = {
 
         try {
             // Find all sales records with this bill number
-            const salesRecords = await db.sales.where('billNo').equals(searchBillNo).toArray();
+            const targetStore = searchBillNo.startsWith('QT') ? db.quotations : db.sales;
+            const salesRecords = await targetStore.where('billNo').equals(searchBillNo).toArray();
 
             if (salesRecords.length === 0) {
                 utils.showNotification('Bill not found: ' + searchBillNo, 'error');
@@ -5270,7 +5342,8 @@ var views = window.views = {
                             <table style="width: 100%; border-collapse: collapse; margin-bottom: 3px; color: #000000;">
                                 <tr>
                                     <td style="text-align: left; font-size: 1.0em; font-weight: bold; vertical-align: middle; padding: 0;">
-                                        Bill ID: ${searchBillNo}
+                                        ${searchBillNo.startsWith('QT') ? 'Quotation ID:' : 'Bill ID:'} ${searchBillNo}
+                                        ${searchBillNo.startsWith('QT') ? '<div style="font-weight: bold; text-decoration: underline; font-size: 0.9em; margin-top: 2px;">Valid for 7 days only</div>' : ''}
                                     </td>
                                     <td style="text-align: right; vertical-align: middle; padding: 0;">
                                         <div style="display: inline-block; border: 1.5px solid #000000; border-radius: 3px; padding: 4px 6px; font-size: 9px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; line-height: 1.2; box-sizing: border-box; color: #000000; text-align: center; white-space: nowrap;">
