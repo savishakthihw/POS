@@ -2780,41 +2780,42 @@ var views = window.views = {
                         </div>
                     </div>
 
-                    <!-- Quick Access Grid -->
-                    <div class="mb-4 flex flex-wrap justify-between items-center gap-2">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">Fast Moving Items</h3>
-                            
-                            <!-- Return Mode Toggle -->
-                            <label class="flex items-center gap-2 cursor-pointer bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-100 transition-colors" title="Return Mode">
-                                <span class="text-xs font-bold text-red-600 uppercase">Return</span>
-                                <div class="relative inline-block w-10 h-5">
-                                    <input type="checkbox" id="return-mode-toggle" class="peer sr-only" onchange="views.toggleReturnMode(this.checked)">
-                                    <div class="w-11 h-6 bg-gray-300 rounded-full peer peer-focus:ring-4 peer-focus:ring-red-300 dark:peer-focus:ring-red-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                                </div>
-                            </label>
+                    <!-- Quick Access Grid Header -->
+                    <div class="mb-3 flex flex-col gap-3">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <!-- Return Mode Toggle -->
+                                <label class="flex items-center gap-2 cursor-pointer bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-100 transition-colors" title="Return Mode">
+                                    <span class="text-xs font-bold text-red-600 uppercase">Return</span>
+                                    <div class="relative inline-block w-10 h-5">
+                                        <input type="checkbox" id="return-mode-toggle" class="peer sr-only" onchange="views.toggleReturnMode(this.checked)">
+                                        <div class="w-11 h-6 bg-gray-300 rounded-full peer peer-focus:ring-4 peer-focus:ring-red-300 dark:peer-focus:ring-red-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                                    </div>
+                                </label>
 
-                            <!-- Quotation Mode Toggle -->
-                            <label class="flex items-center gap-2 cursor-pointer bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg border border-orange-100 transition-colors" title="Quotation Mode">
-                                <span class="text-xs font-bold text-orange-600 uppercase">Quotation</span>
-                                <div class="relative inline-block w-10 h-5">
-                                    <input type="checkbox" id="quotation-mode-toggle" class="peer sr-only" onchange="views.toggleQuotationMode(this.checked)">
-                                    <div class="w-11 h-6 bg-gray-300 rounded-full peer peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
-                                </div>
-                            </label>
+                                <!-- Quotation Mode Toggle -->
+                                <label class="flex items-center gap-2 cursor-pointer bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg border border-orange-100 transition-colors" title="Quotation Mode">
+                                    <span class="text-xs font-bold text-orange-600 uppercase">Quotation</span>
+                                    <div class="relative inline-block w-10 h-5">
+                                        <input type="checkbox" id="quotation-mode-toggle" class="peer sr-only" onchange="views.toggleQuotationMode(this.checked)">
+                                        <div class="w-11 h-6 bg-gray-300 rounded-full peer peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-500"></div>
+                                    </div>
+                                </label>
 
-                            <!-- Custom Item Button -->
-                            <button onclick="views.openCustomItemModal()" class="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-100 transition-colors text-indigo-700">
-                                <i class="fa-solid fa-pen-to-square"></i>
-                                <span class="text-xs font-bold uppercase whitespace-nowrap">Custom Item</span>
+                                <!-- Custom Item Button -->
+                                <button onclick="views.openCustomItemModal()" class="flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-100 transition-colors text-indigo-700">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                    <span class="text-xs font-bold uppercase whitespace-nowrap">Custom Item</span>
+                                </button>
+                            </div>
+
+                            <!-- Clear All Button -->
+                            <button onclick="views.clearCart()" class="flex items-center gap-2 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-100 transition-colors text-red-700">
+                                <i class="fa-solid fa-trash"></i>
+                                <span class="text-xs font-bold uppercase whitespace-nowrap">Reset</span>
                             </button>
                         </div>
-
-                        <!-- Clear All Button -->
-                        <button onclick="views.clearCart()" class="flex items-center gap-2 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-100 transition-colors text-red-700">
-                            <i class="fa-solid fa-trash"></i>
-                            <span class="text-xs font-bold uppercase whitespace-nowrap">Reset</span>
-                        </button>
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap mb-1">Fast Moving Items</h3>
                     </div>
                     
                     <div class="flex-1 overflow-y-auto pr-2">
@@ -3215,6 +3216,19 @@ var views = window.views = {
         mixInputs.forEach(inp => {
             inp.addEventListener('input', updateMixedTotal);
         });
+
+        // --- NEW: Apply Pending Quotation Cart if any ---
+        if (window.pendingQuotationCart) {
+            window.posCart = window.pendingQuotationCart;
+            window.pendingQuotationCart = null;
+            
+            if (window.pendingQuotationCustomer) {
+                const custInp = document.getElementById('pos-customer');
+                if (custInp) custInp.value = window.pendingQuotationCustomer;
+                window.pendingQuotationCustomer = null;
+            }
+            views.renderCart();
+        }
     },
 
     openCustomItemModal: () => {
@@ -3789,8 +3803,10 @@ var views = window.views = {
         const mm = String(now.getMonth() + 1).padStart(2, '0');
         const datePrefix = prefix + yy + mm;
 
+        const targetStore = prefix === 'QT' ? db.quotations : db.sales;
+
         // Find the last record for this prefix (e.g., INV2602)
-        const lastSale = await db.sales
+        const lastSale = await targetStore
             .where('billNo')
             .startsWith(datePrefix)
             .reverse()
@@ -3807,7 +3823,8 @@ var views = window.views = {
             }
         }
 
-        return datePrefix + String(nextSeq).padStart(6, '0');
+        const padLength = prefix === 'QT' ? 4 : 6;
+        return datePrefix + String(nextSeq).padStart(padLength, '0');
     },
 
     unlockOldDate: () => {
@@ -4174,6 +4191,7 @@ var views = window.views = {
 
     // --- SALES HISTORY ---
     initSales: async () => {
+        window.salesHistoryView = 'sales';
         const container = document.getElementById('view-sales');
         container.innerHTML = `
              <div class="flex flex-col h-full gap-6">
@@ -4374,12 +4392,6 @@ var views = window.views = {
                     </button>
                     ` : ''}
                     
-                    ${(s.paymentStatus !== 'Cancelled' && window.salesHistoryView !== 'quotations') ? `
-                    <button onclick="views.cancelSale(${s.id})" class="text-orange-500 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 p-1 rounded transition-colors" title="Cancel Sale">
-                        <i class="fa-solid fa-ban"></i>
-                    </button>
-                    ` : ''}
-
                     <button onclick="views.downloadReceiptAsImage('${s.billNo}')" class="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 p-1 rounded transition-colors" title="WhatsApp / Download Image">
                         <i class="fa-brands fa-whatsapp"></i>
                     </button>
@@ -4388,13 +4400,19 @@ var views = window.views = {
                         <i class="fa-solid fa-print"></i>
                     </button>
 
+                    ${window.salesHistoryView === 'quotations' ? `
+                    <button onclick="views.loadQuotationToCart('${s.billNo}')" class="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 p-1 rounded transition-colors" title="Load Quotation to Cart">
+                        <i class="fa-solid fa-cart-arrow-down"></i>
+                    </button>
+                    ` : ''}
+
                     ${window.salesHistoryView !== 'quotations' ? `
-                    <button onclick="views.voidEntireBill('${s.billNo}')" class="text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 p-1 rounded transition-colors" title="Void Entire Bill">
+                    <button onclick="views.voidEntireBill('${s.billNo}')" class="text-orange-500 hover:text-orange-700 bg-orange-50 hover:bg-orange-100 p-1 rounded transition-colors" title="Void Entire Bill">
                         <i class="fa-solid fa-trash-can"></i>
                     </button>
                     ` : ''}
                     
-                    <button onclick="views.deleteSale(${s.id})" class="text-gray-400 hover:text-red-700 p-1 ${app.isAdmin ? '' : 'hidden'}" title="Permanently Delete Record">
+                    <button onclick="views.deleteEntireBill('${s.billNo}')" class="text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 p-1 rounded transition-colors ${app.isAdmin ? '' : 'hidden'}" title="Permanently Delete Entire Bill">
                         <i class="fa-solid fa-eraser"></i>
                     </button>
                 </td>
@@ -4710,62 +4728,143 @@ var views = window.views = {
         }
     },
 
-    deleteSale: async (id) => {
+    deleteEntireBill: async (billNo) => {
         if (!app.isAdmin) return;
         const isQuotation = window.salesHistoryView === 'quotations';
-        const msg = isQuotation ? 'Are you sure you want to delete this quotation?' : 'Are you sure you want to delete this sale record? Inventory will be reverted.';
+        const msg = isQuotation ? `Are you sure you want to permanently delete entire Quotation ${billNo}?` : `Are you sure you want to permanently delete entire Bill ${billNo}? Inventory will be reverted for all active items.`;
         if (!confirm(msg)) return;
         if (!utils.verifyDeletePassword()) return;
 
         try {
             if (isQuotation) {
                 await db.transaction('rw', db.quotations, db.audit_logs, async () => {
-                    const sale = await db.quotations.get(id);
-                    if (!sale) throw new Error('Sale not found');
-                    await db.quotations.delete(id);
-                    await utils.logAction('Quotation Delete', `Deleted Quotation ${sale.billNo} for ${sale.itemName}`);
+                    const items = await db.quotations.where('billNo').equals(billNo).toArray();
+                    if (items.length === 0) throw new Error('Quotation not found');
+                    
+                    const itemIds = items.map(i => i.id);
+                    await db.quotations.bulkDelete(itemIds);
+                    await utils.logAction('Quotation Delete', `Deleted entire Quotation ${billNo} (${items.length} items)`);
                 });
-                utils.showNotification('Quotation record deleted');
+                utils.showNotification('Quotation deleted successfully');
                 views.initSales();
             } else {
                 await db.transaction('rw', db.sales, db.inventory, db.item_batches, db.audit_logs, async () => {
-                    const sale = await db.sales.get(id);
-                    if (!sale) throw new Error('Sale not found');
+                    const items = await db.sales.where('billNo').equals(billNo).toArray();
+                    if (items.length === 0) throw new Error('Bill not found');
 
-                    // 1. Revert Inventory
-                    const invItem = await db.inventory.get(sale.itemId);
-                    if (invItem) {
-                        const newCurrent = (invItem.currentStock || 0) + sale.qty;
-                        const cost = invItem.avgCost || sale.costPrice || 0;
-                        await db.inventory.update(sale.itemId, {
-                            sold: (invItem.sold || 0) - sale.qty,
-                            currentStock: newCurrent,
-                            stockValue: newCurrent * cost
-                        });
-                    }
+                    for (const sale of items) {
+                        // Only revert inventory if not already cancelled
+                        if (sale.paymentStatus !== 'Cancelled') {
+                            // 1. Revert Inventory
+                            const invItem = await db.inventory.get(sale.itemId);
+                            if (invItem) {
+                                const newCurrent = (invItem.currentStock || 0) + sale.qty;
+                                const cost = invItem.avgCost || sale.costPrice || 0;
+                                await db.inventory.update(sale.itemId, {
+                                    sold: (invItem.sold || 0) - sale.qty,
+                                    currentStock: newCurrent,
+                                    stockValue: newCurrent * cost
+                                });
+                            }
 
-                    // 2. Revert Batch
-                    if (sale.batchId) {
-                        const batch = await db.item_batches.where({ itemId: sale.itemId, batchId: sale.batchId }).first();
-                        if (batch) {
-                            await db.item_batches.update(batch.id, {
-                                currentStock: (batch.currentStock || 0) + sale.qty
-                            });
+                            // 2. Revert Batch
+                            if (sale.batchId) {
+                                const batch = await db.item_batches.where({ itemId: sale.itemId, batchId: sale.batchId }).first();
+                                if (batch) {
+                                    await db.item_batches.update(batch.id, {
+                                        currentStock: (batch.currentStock || 0) + sale.qty
+                                    });
+                                }
+                            }
                         }
                     }
 
-                    // 3. Delete Sale
-                    await db.sales.delete(id);
+                    // 3. Delete Sales
+                    const itemIds = items.map(i => i.id);
+                    await db.sales.bulkDelete(itemIds);
 
                     // 4. Audit Log
-                    await utils.logAction('Sale Delete', `Deleted Sale Bill ${sale.billNo} for ${sale.itemName}`);
+                    await utils.logAction('Sale Delete', `Deleted entire Sale Bill ${billNo} (${items.length} items)`);
                 });
-                utils.showNotification('Sale record deleted and inventory reverted');
+                utils.showNotification('Bill deleted and inventory reverted successfully');
                 views.initSales();
             }
         } catch (err) {
-            console.error('Delete Sale Error:', err);
-            utils.showNotification('Error deleting record: ' + err.message, 'error');
+            console.error('Delete Bill Error:', err);
+            utils.showNotification('Error deleting bill: ' + err.message, 'error');
+        }
+    },
+
+    loadQuotationToCart: async (billNo) => {
+        if (window.posCart.length > 0) {
+            if (!confirm('This will clear your current cart and load the quotation. Proceed?')) return;
+        }
+
+        try {
+            const quotationItems = await db.quotations.where('billNo').equals(billNo).toArray();
+            if (quotationItems.length === 0) {
+                utils.showNotification('Quotation not found or empty', 'error');
+                return;
+            }
+
+            const newCart = [];
+            
+            for (const item of quotationItems) {
+                // Fetch current stock from inventory
+                const invRecord = await db.inventory.get(item.itemId);
+                
+                // Fetch batch if exists
+                let sysStock = invRecord ? invRecord.currentStock : 0;
+                let reorderLevel = invRecord ? invRecord.reorderLevel : 0;
+                
+                if (item.batchId && item.batchId !== 'B001') {
+                    const batch = await db.item_batches.where({ itemId: item.itemId, batchId: item.batchId }).first();
+                    if (batch) sysStock = batch.currentStock;
+                }
+                
+                const isCustom = String(item.itemId).startsWith('CUSTOM-');
+
+                newCart.push({
+                    cartItemId: item.batchId && item.batchId !== 'B001' ? `${item.itemId}_${item.batchId}` : item.itemId,
+                    itemId: item.itemId,
+                    batchId: item.batchId || 'B001',
+                    name: item.itemName,
+                    supplierId: item.supplierId || 'N/A',
+                    price: item.mrp || item.sellingPrice || (item.total / item.qty),
+                    cost: item.costPrice || 0,
+                    qty: item.qty,
+                    unit: item.unit || 'Pcs',
+                    discount: (item.itemDiscount || item.discount || 0) / item.qty, // Convert total item discount to unit discount
+                    total: item.total,
+                    remarks: '',
+                    dbStock: sysStock,
+                    reorderLevel: reorderLevel,
+                    isCustom: isCustom
+                });
+            }
+
+            // Make sure not to be in Quotation Mode when loading it into the actual cart for billing!
+            window.posQuotationMode = false;
+            const qtToggle = document.getElementById('pos-quotation-toggle');
+            if(qtToggle) {
+                qtToggle.checked = false;
+                qtToggle.dispatchEvent(new Event('change'));
+            }
+
+            window.pendingQuotationCart = newCart;
+            window.pendingQuotationCustomer = quotationItems[0].customer && quotationItems[0].customer !== 'Walk-in' ? quotationItems[0].customer : '';
+
+            if (typeof app !== 'undefined' && app.navigate) {
+                app.navigate('pos');
+            } else {
+                views.initPOS();
+            }
+
+            utils.showNotification(`Quotation ${billNo} loaded to cart`, 'success');
+
+        } catch (err) {
+            console.error('Error loading quotation:', err);
+            utils.showNotification('Failed to load quotation: ' + err.message, 'error');
         }
     },
 
