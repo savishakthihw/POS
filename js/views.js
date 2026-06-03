@@ -4040,12 +4040,14 @@ var views = window.views = {
             }
 
             // 3. Receipt Generation and Print
+            const rawPhone = localStorage.getItem('storePhone') || '072 18 18 748';
+            const formattedPhone = rawPhone.replace(/\s+/g, '').replace(/^(\d{3})(\d{2})(\d{2})(\d{3})$/, '$1 $2 $3 $4');
             const receiptHTML = `
                 <div style="width: 100%; padding: 0; margin: 0; overflow: visible; font-family: 'Outfit', 'Noto Sans Sinhala', sans-serif;">
                     <div style="text-align: center; margin-bottom: 5px;">
-                        <h1 style="font-size: 1.3em; margin: 0 0 2px 0; font-weight: bold; text-transform: uppercase;">SAVI SHAKTHI<br>HARDWARE</h1>
-                        <p style="margin: 0; font-size: 0.75em;">5th Canel, Srawasthipura, Anuradhapura</p>
-                        <p style="margin: 0; font-size: 0.9em;">Phone: 076 181 8748</p>
+                        <h1 style="font-size: 1.3em; margin: 0 0 2px 0; font-weight: bold; text-transform: uppercase;">${localStorage.getItem('storeName') || 'SAVI SHAKTHI<br>HARDWARE'}</h1>
+                        <p style="margin: 0; font-size: 0.75em;">${localStorage.getItem('storeAddress') || '5th Canel, Srawasthipura, Anuradhapura'}</p>
+                        <p style="margin: 0; font-size: 0.9em;">Phone: ${formattedPhone}</p>
                         <div style="border-bottom: 2px solid black; margin: 5px 0;"></div>
                         
                         <div style="font-size: 0.85em; text-align: left; font-weight: bold;">
@@ -5171,12 +5173,14 @@ var views = window.views = {
             const displayBalance = displayPaid - finalTotal;
 
             // Generate Receipt HTML (similar to POS checkout)
+            const rawPhone = localStorage.getItem('storePhone') || '072 18 18 748';
+            const formattedPhone = rawPhone.replace(/\s+/g, '').replace(/^(\d{3})(\d{2})(\d{2})(\d{3})$/, '$1 $2 $3 $4');
             const receiptHTML = `
                 <div style="width: 100%; padding: 0; margin: 0; overflow: visible; font-family: 'Outfit', 'Noto Sans Sinhala', sans-serif;">
                     <div style="text-align: center; margin-bottom: 5px;">
-                        <h1 style="font-size: 1.3em; margin: 0 0 2px 0; font-weight: bold; text-transform: uppercase;">SAVI SHAKTHI<br>HARDWARE</h1>
-                        <p style="margin: 0; font-size: 0.75em;">5th Canel, Srawasthipura, Anuradhapura</p>
-                        <p style="margin: 0; font-size: 0.9em;">Phone: 076 181 8748</p>
+                        <h1 style="font-size: 1.3em; margin: 0 0 2px 0; font-weight: bold; text-transform: uppercase;">${localStorage.getItem('storeName') || 'SAVI SHAKTHI<br>HARDWARE'}</h1>
+                        <p style="margin: 0; font-size: 0.75em;">${localStorage.getItem('storeAddress') || '5th Canel, Srawasthipura, Anuradhapura'}</p>
+                        <p style="margin: 0; font-size: 0.9em;">Phone: ${formattedPhone}</p>
                         <div style="border-bottom: 2px solid black; margin: 5px 0;"></div>
                         
                         <div style="font-size: 0.85em; text-align: left; font-weight: bold;">
@@ -5429,12 +5433,14 @@ var views = window.views = {
             tempContainer.style.overflow = 'visible';
 
             // Generate Receipt HTML
+            const rawPhone = localStorage.getItem('storePhone') || '072 18 18 748';
+            const formattedPhone = rawPhone.replace(/\s+/g, '').replace(/^(\d{3})(\d{2})(\d{2})(\d{3})$/, '$1 $2 $3 $4');
             const receiptHTML = `
                 <div style="width: 100%; padding: 0; margin: 0; background: #ffffff;">
                     <div style="text-align: center; margin-bottom: 8px;">
-                        <h1 style="font-size: 1.5em; margin: 0 0 3px 0; font-weight: bold; text-transform: uppercase; color: #000000; letter-spacing: 0.5px;">SAVI SHAKTHI<br>HARDWARE</h1>
-                        <p style="margin: 0; font-size: 0.85em; color: #000000; font-weight: 500;">5th Canel, Srawasthipura, Anuradhapura</p>
-                        <p style="margin: 1px 0 0 0; font-size: 0.95em; font-weight: bold; color: #000000;">Phone: 076 181 8748</p>
+                        <h1 style="font-size: 1.5em; margin: 0 0 3px 0; font-weight: bold; text-transform: uppercase; color: #000000; letter-spacing: 0.5px;">${localStorage.getItem('storeName') || 'SAVI SHAKTHI<br>HARDWARE'}</h1>
+                        <p style="margin: 0; font-size: 0.85em; color: #000000; font-weight: 500;">${localStorage.getItem('storeAddress') || '5th Canel, Srawasthipura, Anuradhapura'}</p>
+                        <p style="margin: 1px 0 0 0; font-size: 0.95em; font-weight: bold; color: #000000;">Phone: ${formattedPhone}</p>
                         <div style="border-bottom: 2px solid #000000; margin: 8px 0;"></div>
                         
                         <div style="font-size: 0.95em; text-align: left; font-weight: bold; color: #000000;">
@@ -5994,6 +6000,40 @@ var views = window.views = {
                     </button>
                 </div>
             </div>
+
+            <!-- 7. Receipt Details Settings (NEW) -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ${app.isAdmin ? '' : 'hidden'}">
+                <div class="p-6 border-b border-gray-50 flex items-center gap-4 bg-gradient-to-r from-teal-50 to-white">
+                    <div class="w-12 h-12 bg-teal-100 text-teal-600 rounded-xl flex items-center justify-center text-xl shadow-sm">
+                        <i class="fa-solid fa-file-invoice"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">Receipt Details Settings</h3>
+                        <p class="text-xs text-gray-500">Update hardware name, address, and phone for bills</p>
+                    </div>
+                </div>
+
+                <div class="p-8">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1">Hardware Name (HTML allowed for breaks)</label>
+                            <input type="text" id="setting-store-name" class="w-full rounded-xl border-gray-300 px-4 py-2 text-sm focus:border-primary" placeholder="SAVI SHAKTHI<br>HARDWARE" value="${localStorage.getItem('storeName') || 'SAVI SHAKTHI<br>HARDWARE'}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1">Address</label>
+                            <input type="text" id="setting-store-address" class="w-full rounded-xl border-gray-300 px-4 py-2 text-sm focus:border-primary" placeholder="5th Canel, Srawasthipura, Anuradhapura" value="${localStorage.getItem('storeAddress') || '5th Canel, Srawasthipura, Anuradhapura'}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1">Phone Number</label>
+                            <input type="text" id="setting-store-phone" class="w-full rounded-xl border-gray-300 px-4 py-2 text-sm focus:border-primary" placeholder="072 18 18 748" value="${localStorage.getItem('storePhone') || '072 18 18 748'}">
+                        </div>
+                    </div>
+                    <button onclick="views.saveReceiptSettings()" class="px-6 py-2.5 bg-teal-600 text-white rounded-xl text-sm font-bold hover:bg-teal-700 transition-all shadow-sm">
+                        Save Receipt Settings
+                    </button>
+                </div>
+            </div>
+
         </div>
             </div >
 
@@ -6004,6 +6044,16 @@ var views = window.views = {
             views.loadAuditLogs();
             views.loadUsers();
         }
+    },
+
+    saveReceiptSettings: () => {
+        const name = document.getElementById('setting-store-name').value;
+        const address = document.getElementById('setting-store-address').value;
+        const phone = document.getElementById('setting-store-phone').value;
+        localStorage.setItem('storeName', name);
+        localStorage.setItem('storeAddress', address);
+        localStorage.setItem('storePhone', phone);
+        utils.showNotification('Receipt settings saved successfully!', 'success');
     },
 
     loadAuditLogs: async () => {
