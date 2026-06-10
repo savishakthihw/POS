@@ -7000,7 +7000,14 @@ var views = window.views = {
             return;
         }
 
-        tbody.innerHTML = purchases.map(p => {
+        let totalAll = 0;
+        let totalPaid = 0;
+        let totalBalance = 0;
+
+        const rowsHtml = purchases.map(p => {
+            totalAll += (p.totalBill || 0);
+            totalPaid += (p.paidAmount || 0);
+            totalBalance += (p.balance || 0);
             const isDue = p.balance > 0;
             return `
             <tr class="border-b transition-colors ${isDue ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}">
@@ -7059,6 +7066,16 @@ var views = window.views = {
             </tr>
             `;
         }).join('');
+
+        tbody.innerHTML = rowsHtml + `
+            <tr class="bg-indigo-50 border-t border-indigo-100 sticky bottom-0">
+                <td colspan="4" class="px-3 py-4 text-right font-black uppercase text-indigo-800 text-xs tracking-wider shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">Total Summary</td>
+                <td class="px-3 py-4 text-right font-black text-indigo-900 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">${utils.formatCurrency(totalAll)}</td>
+                <td class="px-3 py-4 text-right font-black text-emerald-700 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">${utils.formatCurrency(totalPaid)}</td>
+                <td class="px-3 py-4 text-right font-black text-red-600 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">${utils.formatCurrency(totalBalance)}</td>
+                <td class="px-3 py-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]"></td>
+            </tr>
+        `;
     },
 
     settlePurchase: async (id, currentBalance) => {
