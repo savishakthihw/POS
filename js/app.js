@@ -586,7 +586,7 @@ window.app = {
     saveGhostBackup: async () => {
         try {
             // PERFORMANCE FIX: Only backup structural and active data. Exclude huge historical tables.
-            const tables = ['item_master', 'inventory', 'stock_in', 'sales', 'expenses', 'purchases', 'settings', 'held_bills', 'item_batches', 'users'];
+            const tables = ['item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 'purchases', 'settings', 'held_bills', 'item_batches', 'users'];
             const data = {};
 
             await Promise.all(tables.map(async (table) => {

@@ -770,11 +770,19 @@
                             class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" placeholder="INV-001" required>
                     </div>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Supplier Name</label>
-                    <input type="text" id="purchase-supplier"
-                        class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" placeholder="Enter supplier name"
-                        required>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Supplier ID</label>
+                        <select id="purchase-supplier-id" class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm" required>
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Supplier Name</label>
+                        <input type="text" id="purchase-supplier"
+                            class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm bg-gray-50" placeholder="Enter supplier name"
+                            required readonly>
+                    </div>
                 </div>
                 <div class="grid grid-cols-3 gap-4">
                     <div>

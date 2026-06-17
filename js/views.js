@@ -6337,8 +6337,8 @@ var views = window.views = {
             utils.showNotification('Preparing system backup...', 'info');
 
             const tables = [
-                'item_master', 'inventory', 'stock_in', 'sales', 'expenses', 'purchases',
-                'settings', 'held_bills', 'item_batches', 'audit_logs', 'users', 'sales_archive', 'stock_in_archive', 'closing_balances'
+                'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 'purchases',
+                'settings', 'held_bills', 'item_batches', 'audit_logs', 'users', 'sales_archive', 'stock_in_archive', 'purchases_archive', 'closing_balances'
             ];
             const backupDataMap = {};
 
@@ -6813,7 +6813,13 @@ var views = window.views = {
                             <i class="fa-solid fa-calendar-days absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
                             <input type="month" id="purchases-search-month" 
                              class="pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
-                             onchange="views.loadPurchasesTable(this.value)">
+                             onchange="views.loadPurchasesTable(this.value, document.getElementById('purchases-search-sup-id')?.value)">
+                        </div>
+                        <div class="relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                            <input type="text" id="purchases-search-sup-id" placeholder="Supplier ID / Name..." 
+                             class="pl-9 pr-3 py-2.5 w-48 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                             oninput="views.loadPurchasesTable(document.getElementById('purchases-search-month').value, this.value)">
                         </div>
                         <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.exportToPDF('purchases-table', 'Purchases Report')); } else { views.exportToPDF('purchases-table', 'Purchases Report'); }" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition-all flex items-center gap-2">
                              <i class="fa-solid fa-file-pdf"></i> PDF
@@ -6881,12 +6887,14 @@ var views = window.views = {
         if (dateInp) dateInp.valueAsDate = new Date();
     },
 
-    openAddPurchaseModal: (id = null) => {
+    openAddPurchaseModal: async (id = null) => {
         const modal = document.getElementById('add-purchase-modal');
         const title = document.getElementById('purchase-modal-title');
         const saveBtn = document.getElementById('purchase-save-btn');
         const idInp = document.getElementById('purchase-id');
         const form = document.getElementById('add-purchase-form');
+        const supIdDropdown = document.getElementById('purchase-supplier-id');
+        const supNameInp = document.getElementById('purchase-supplier');
 
         form.reset();
         idInp.value = '';
@@ -6897,10 +6905,46 @@ var views = window.views = {
         document.getElementById('purchase-settle-date-container').classList.add('hidden');
         document.getElementById('purchase-cheque-details').classList.add('hidden');
 
+        // Fetch supplier IDs
+        const allItems = await db.item_master.toArray();
+        const suppliers = [...new Set(allItems.map(i => i.supplierId).filter(Boolean))];
+        
+        supIdDropdown.innerHTML = '<option value="">Select Supplier ID...</option>' + 
+            suppliers.map(s => `<option value="${s}">${s}</option>`).join('') +
+            '<option value="Other">Other (Custom)</option>';
+
+        supIdDropdown.onchange = async () => {
+            if (supIdDropdown.value === 'Other') {
+                supNameInp.readOnly = false;
+                supNameInp.value = '';
+                supNameInp.focus();
+            } else if (supIdDropdown.value) {
+                supNameInp.readOnly = true;
+                supNameInp.value = 'Auto-detecting...';
+                // Try to find supplier name from previous purchases
+                try {
+                    const purchases = await db.purchases.toArray();
+                    const lastPur = purchases.reverse().find(p => p.supplierId === supIdDropdown.value);
+                    if (lastPur && lastPur.supplierName) {
+                        supNameInp.value = lastPur.supplierName;
+                    } else {
+                        supNameInp.value = '';
+                        supNameInp.readOnly = false;
+                    }
+                } catch (e) {
+                    supNameInp.value = '';
+                    supNameInp.readOnly = false;
+                }
+            } else {
+                supNameInp.value = '';
+                supNameInp.readOnly = true;
+            }
+        };
+
         if (id) {
             title.innerText = 'Edit Purchase Record';
             saveBtn.innerText = 'Update Purchase';
-            views.editPurchase(id);
+            await views.editPurchase(id);
         }
 
         modal.classList.remove('hidden');
@@ -6911,7 +6955,19 @@ var views = window.views = {
         if (!pur) return;
         document.getElementById('purchase-id').value = id;
         document.getElementById('purchase-date').value = pur.date;
-        document.getElementById('purchase-supplier').value = pur.supplierName;
+        
+        const supIdDropdown = document.getElementById('purchase-supplier-id');
+        const supNameInp = document.getElementById('purchase-supplier');
+        
+        if (pur.supplierId && Array.from(supIdDropdown.options).some(o => o.value === pur.supplierId)) {
+            supIdDropdown.value = pur.supplierId;
+            supNameInp.readOnly = true;
+        } else {
+            supIdDropdown.value = 'Other';
+            supNameInp.readOnly = false;
+        }
+        
+        supNameInp.value = pur.supplierName;
         document.getElementById('purchase-invoice-no').value = pur.invoiceNo;
         document.getElementById('purchase-total').value = pur.totalBill;
         document.getElementById('purchase-paid').value = pur.paidAmount;
@@ -6934,7 +6990,11 @@ var views = window.views = {
         e.preventDefault();
         const id = document.getElementById('purchase-id').value;
         const date = document.getElementById('purchase-date').value;
+        
+        const supplierIdVal = document.getElementById('purchase-supplier-id').value;
+        const supplierId = supplierIdVal === 'Other' ? '' : supplierIdVal;
         const supplierName = document.getElementById('purchase-supplier').value;
+        
         const invoiceNo = document.getElementById('purchase-invoice-no').value;
         const totalBill = parseFloat(document.getElementById('purchase-total').value);
         const paidAmount = parseFloat(document.getElementById('purchase-paid').value);
@@ -6946,7 +7006,7 @@ var views = window.views = {
         const reminderDays = parseInt(document.getElementById('purchase-reminder-days').value) || 0;
 
         const data = {
-            date, supplierName, invoiceNo, totalBill, paidAmount, balance,
+            date, supplierId, supplierName, invoiceNo, totalBill, paidAmount, balance,
             method, settleDate, chequeDate, chequeNo, reminderDays
         };
 
@@ -6980,6 +7040,7 @@ var views = window.views = {
             const q = query.toLowerCase();
             purchases = purchases.filter(p =>
                 (p.supplierName || '').toLowerCase().includes(q) ||
+                (p.supplierId || '').toLowerCase().includes(q) ||
                 (p.invoiceNo || '').toLowerCase().includes(q) ||
                 (p.method || '').toLowerCase().includes(q)
             );
@@ -7013,7 +7074,10 @@ var views = window.views = {
             <tr class="border-b transition-colors ${isDue ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}">
                 <td class="px-3 py-4 font-mono text-xs text-gray-500">${p.date}</td>
                 <td class="px-3 py-4 font-bold text-gray-700">${p.invoiceNo}</td>
-                <td class="px-3 py-4 text-sm text-gray-600">${p.supplierName}</td>
+                <td class="px-3 py-4 text-sm text-gray-600">
+                    <div class="font-bold">${p.supplierName}</div>
+                    ${p.supplierId ? `<div class="text-[10px] text-gray-400 font-mono uppercase">${p.supplierId}</div>` : ''}
+                </td>
                  <td class="px-3 py-4">
                     <div class="flex flex-col gap-2">
                         <span class="w-fit px-3 py-1 rounded-full text-[10px] font-black uppercase ${p.method === 'Cash' ? 'bg-green-100 text-green-600' : p.method === 'Credit' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}">

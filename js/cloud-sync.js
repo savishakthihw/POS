@@ -2,7 +2,7 @@
 window.cloudSync = {
     isSyncing: false,
     collections: [
-        'item_master', 'inventory', 'stock_in', 'sales', 'expenses', 
+        'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 
         'purchases', 'settings', 'item_batches', 'users', 'held_bills',
         'sales_archive', 'stock_in_archive', 'purchases_archive', 'closing_balances', 'audit_logs'
     ],
