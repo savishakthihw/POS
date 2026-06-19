@@ -3192,6 +3192,7 @@ var views = window.views = {
             mixInputs.forEach(inp => total += (parseFloat(inp.value) || 0));
             paidInput.value = total.toFixed(2); // Always show a value, even if 0.00
             views.calculateBalance();
+            views.renderCart();
         };
 
         methodRadios.forEach(radio => {
@@ -3210,6 +3211,7 @@ var views = window.views = {
                         views.calculateBalance();
                     }
                 }
+                views.renderCart();
             });
         });
 
@@ -3721,15 +3723,41 @@ var views = window.views = {
             const d = parseFloat(discountInput.value) || 0;
             const currentTotal = subtotal - d;
             const totalCost = window.posCart.reduce((sum, i) => sum + (i.cost * i.qty), 0);
-            const totalProfit = currentTotal - totalCost;
+            
+            let bankFee = 0;
+            const paymentMethod = document.querySelector('input[name="payment-method"]:checked')?.value || 'Cash';
+            const feePercent = app.bankFeePercentage || 2.75;
+            
+            if (paymentMethod === 'Visa/Master') {
+                bankFee = currentTotal * (feePercent / 100);
+            } else if (paymentMethod === 'Mixed') {
+                const cardAmt = parseFloat(document.getElementById('mix-card').value) || 0;
+                bankFee = cardAmt * (feePercent / 100);
+            }
+
+            const totalProfit = currentTotal - totalCost - bankFee;
             const totalMargin = currentTotal > 0 ? (totalProfit / currentTotal) * 100 : 0;
 
             if (profitSummaryEl) {
                 profitSummaryEl.innerHTML = `
-                    <div class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-100 font-black text-sm shadow-sm">
-                        <i class="fa-solid fa-chart-line"></i>
-                        <span>Bill Profit: ${utils.formatCurrency(totalProfit)}</span>
-                        <span class="text-xs opacity-70">(${totalMargin.toFixed(1)}%)</span>
+                    <div class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-100 font-black text-sm shadow-sm flex-wrap justify-end">
+                        <div class="flex items-center gap-1">
+                            <i class="fa-solid fa-chart-line"></i>
+                            <span>Profit: ${utils.formatCurrency(totalProfit + bankFee)}</span>
+                        </div>
+                        ${bankFee > 0 ? `
+                        <div class="flex items-center gap-1 text-rose-600 border-l border-emerald-200 pl-2 ml-1">
+                            <i class="fa-solid fa-credit-card"></i>
+                            <span>Fee: -${utils.formatCurrency(bankFee)}</span>
+                        </div>
+                        <div class="flex items-center gap-1 text-indigo-700 border-l border-emerald-200 pl-2 ml-1">
+                            <i class="fa-solid fa-sack-dollar"></i>
+                            <span>Net: ${utils.formatCurrency(totalProfit)}</span>
+                            <span class="text-xs opacity-70 ml-1">(${totalMargin.toFixed(1)}%)</span>
+                        </div>
+                        ` : `
+                        <span class="text-xs opacity-70 border-l border-emerald-200 pl-2 ml-1">Margin: ${totalMargin.toFixed(1)}%</span>
+                        `}
                     </div>
                 `;
             }
@@ -3954,8 +3982,21 @@ var views = window.views = {
                 const totalDiscount = itemDirectDiscount + billDiscountPortion;
                 const itemFinalTotal = itemGrossTotal - totalDiscount;
                 const itemSellingPrice = itemFinalTotal / item.qty;
-                const itemProfit = itemFinalTotal - (item.cost * item.qty);
+                let itemProfit = itemFinalTotal - (item.cost * item.qty);
                 const customerName = document.getElementById('pos-customer').value.trim() || 'Walk-in';
+
+                // --- NEW: Calculate Item Bank Fee ---
+                let itemBankFee = 0;
+                const feePercent = app.bankFeePercentage || 2.75;
+                if (paymentMethod === 'Visa/Master') {
+                    itemBankFee = itemFinalTotal * (feePercent / 100);
+                } else if (paymentMethod === 'Mixed' && finalTotal > 0) {
+                    // Proportional fee based on the item's contribution to the bill
+                    const itemRatio = itemFinalTotal / finalTotal;
+                    itemBankFee = (cardAmt * itemRatio) * (feePercent / 100);
+                }
+                
+                itemProfit = itemProfit - itemBankFee;
 
                 let paymentStatus = 'Paid';
                 let settledDate = saleDate;
@@ -3984,6 +4025,7 @@ var views = window.views = {
                     sellingPrice: itemSellingPrice,
                     total: itemFinalTotal,
                     profit: itemProfit,
+                    bankFee: itemBankFee,
                     method: paymentMethod,
                     paymentStatus: paymentStatus,
                     settledDate: settledDate,
@@ -4257,7 +4299,8 @@ var views = window.views = {
                                     <th class="px-3 py-3 text-right">Disc.</th>
                                     <th class="px-3 py-3 text-right">Price</th>
                                     <th class="px-3 py-3 text-right">Total</th>
-                                    <th class="px-3 py-3 text-right">Profit</th>
+                                    <th class="px-3 py-3 text-right text-rose-600">Bank Fee</th>
+                                    <th class="px-3 py-3 text-right">Net Profit</th>
                                     <th class="px-2 py-3 text-right">Action</th>
                                 </tr>
                             </thead>
@@ -4320,6 +4363,7 @@ var views = window.views = {
         const totalFound = sales.length;
         const totalAmount = sales.filter(s => s.paymentStatus !== 'Cancelled').reduce((sum, s) => sum + (s.total || 0), 0);
         const totalProfitVal = sales.filter(s => s.paymentStatus !== 'Cancelled').reduce((sum, s) => sum + (s.profit || 0), 0);
+        const totalBankFeeVal = sales.filter(s => s.paymentStatus !== 'Cancelled').reduce((sum, s) => sum + (s.bankFee || 0), 0);
 
         // Limit to latest 50 for display ONLY if no search filters are active
         const isFiltered = query || searchMonth;
@@ -4346,7 +4390,11 @@ var views = window.views = {
                         <span class="text-sm font-black text-indigo-700">${utils.formatCurrency(totalAmount)}</span>
                     </div>
                     <div class="flex flex-col items-end border-l pl-6 border-gray-200">
-                        <span class="text-[10px] text-gray-400">Total Profit</span>
+                        <span class="text-[10px] text-gray-400">Total Bank Fees</span>
+                        <span class="text-sm font-black text-rose-600">${utils.formatCurrency(totalBankFeeVal)}</span>
+                    </div>
+                    <div class="flex flex-col items-end border-l pl-6 border-gray-200">
+                        <span class="text-[10px] text-gray-400">Net Profit</span>
                         <span class="text-sm font-black text-emerald-700">${utils.formatCurrency(totalProfitVal)}</span>
                     </div>
                 </div>
@@ -4386,6 +4434,7 @@ var views = window.views = {
                 <td class="px-2 py-3 text-right text-red-600 text-sm font-medium ${s.paymentStatus === 'Cancelled' ? 'line-through' : ''}">${utils.formatCurrency(s.discount || 0)}</td>
                 <td class="px-2 py-3 text-right text-sm">${utils.formatCurrency(s.sellingPrice)}</td>
                 <td class="px-2 py-3 text-right font-black text-indigo-700 text-sm ${s.paymentStatus === 'Cancelled' ? 'line-through text-gray-400' : ''}">${utils.formatCurrency(s.total)}</td>
+                <td class="px-1 py-3 text-right text-rose-600 font-bold text-sm ${s.paymentStatus === 'Cancelled' ? 'line-through text-gray-400' : ''}">${s.bankFee ? '-' + utils.formatCurrency(s.bankFee) : '-'}</td>
                 <td class="px-1 py-3 text-right text-emerald-700 font-bold text-sm ${s.paymentStatus === 'Cancelled' ? 'line-through text-gray-400' : ''}">${utils.formatCurrency(s.profit)}</td>
                 <td class="px-1 py-3 text-right space-x-1 flex justify-end items-center h-full">
                     ${(s.paymentStatus === 'Pending' && window.salesHistoryView !== 'quotations') ? `
@@ -5816,6 +5865,32 @@ var views = window.views = {
                 </div>
             </div>
 
+            <!-- 1.7 Payment Settings (NEW) -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ${app.isAdmin ? '' : 'hidden'}">
+                <div class="p-6 border-b border-gray-50 flex items-center gap-4 bg-gradient-to-r from-emerald-50 to-white">
+                    <div class="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center text-xl shadow-sm">
+                        <i class="fa-solid fa-credit-card"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">Payment & Fees</h3>
+                        <p class="text-xs text-gray-500">Manage internal payment processing fees</p>
+                    </div>
+                </div>
+
+                <div class="p-8 space-y-6">
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                        <div>
+                            <h4 class="font-bold text-gray-800 text-sm">Bank Card Processing Fee (%)</h4>
+                            <p class="text-xs text-gray-500">Automatically deducted from Bill Profit when Visa/Master is used. Does not show on customer receipt.</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                         <input type="number" step="0.01" id="setting-bank-fee" value="${app.bankFeePercentage || 2.75}" onchange="views.updateBankFeeSetting(this.value)" class="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold w-24 text-right">
+                         <span class="text-gray-500 font-bold">%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
 
             <!-- 2. Font Management (NEW) - Admin Only -->
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ${app.isAdmin ? '' : 'hidden'}">
@@ -6330,6 +6405,13 @@ var views = window.views = {
         app.autoBackupInterval = interval;
         await db.settings.put({ key: 'autoBackupInterval', value: String(interval) });
         utils.showNotification('Backup interval saved successfully', 'success');
+    },
+
+    updateBankFeeSetting: async (val) => {
+        const fee = parseFloat(val);
+        app.bankFeePercentage = fee;
+        await db.settings.put({ key: 'bankFeePercentage', value: String(fee) });
+        utils.showNotification('Bank fee percentage saved successfully', 'success');
     },
 
     backupData: async () => {
@@ -7358,12 +7440,13 @@ var views = window.views = {
                                         <th class="px-2 py-2">Date</th>
                                         <th class="px-2 py-2 text-right">Sales</th>
                                         <th class="px-2 py-2 text-right">Profit</th>
+                                        <th class="px-2 py-2 text-right text-rose-500">Fees</th>
                                         <th class="px-2 py-2 text-right">Margin</th>
                                     </tr>
                                 </thead>
                                 <tbody id="report-daily-summary-body" class="divide-y divide-gray-50">
                                     <tr>
-                                        <td colspan="4" class="px-4 py-8 text-center text-gray-400 animate-pulse">Initializing table...</td>
+                                        <td colspan="5" class="px-4 py-8 text-center text-gray-400 animate-pulse">Initializing table...</td>
                                     </tr>
                                 </tbody>
                             </table>

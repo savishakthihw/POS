@@ -114,6 +114,12 @@ window.app = {
             if (backupInterval) {
                 app.autoBackupInterval = parseInt(backupInterval.value);
             }
+            const bankFee = await db.settings.get('bankFeePercentage');
+            if (bankFee) {
+                app.bankFeePercentage = parseFloat(bankFee.value);
+            } else {
+                app.bankFeePercentage = 2.75;
+            }
         } catch (err) {
             console.error('Error loading settings:', err);
         }
@@ -932,9 +938,10 @@ window.app = {
 
             const summaryMap = {};
             monthSales.forEach(s => {
-                if (!summaryMap[s.date]) summaryMap[s.date] = { sales: 0, profit: 0 };
+                if (!summaryMap[s.date]) summaryMap[s.date] = { sales: 0, profit: 0, fees: 0 };
                 summaryMap[s.date].sales += s.total;
                 summaryMap[s.date].profit += s.profit;
+                summaryMap[s.date].fees += (s.bankFee || 0);
             });
 
             const sortedDays = Object.keys(summaryMap).sort().reverse();
@@ -943,16 +950,18 @@ window.app = {
                 summaryTable.innerHTML = sortedDays.map(date => {
                     const sales = summaryMap[date].sales;
                     const profit = summaryMap[date].profit;
+                    const fees = summaryMap[date].fees;
                     const margin = sales > 0 ? (profit / sales) * 100 : 0;
                     return `
                         <tr class="border-b hover:bg-gray-50 transition-colors">
                             <td class="px-2 py-1.5 font-bold text-gray-700 font-mono text-xs">${date.split('-')[2]}/${date.split('-')[1]}</td>
                             <td class="px-2 py-1.5 font-bold text-indigo-700 text-right text-xs">${utils.formatCurrency(sales)}</td>
                             <td class="px-2 py-1.5 font-bold text-emerald-600 text-right text-xs">${utils.formatCurrency(profit)}</td>
+                            <td class="px-2 py-1.5 font-bold text-rose-600 text-right text-xs">${fees > 0 ? '-' + utils.formatCurrency(fees) : '-'}</td>
                             <td class="px-2 py-1.5 font-bold text-purple-600 text-right text-xs">${margin.toFixed(1)}%</td>
                         </tr>
                     `;
-                }).join('') || '<tr><td colspan="4" class="px-4 py-8 text-center text-gray-400">No sales found for the selected period</td></tr>';
+                }).join('') || '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">No sales found for the selected period</td></tr>';
             }
         } catch (e) {
             console.error('Report summary update failed:', e);
