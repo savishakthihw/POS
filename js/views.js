@@ -3727,12 +3727,23 @@ var views = window.views = {
             let bankFee = 0;
             const paymentMethod = document.querySelector('input[name="payment-method"]:checked')?.value || 'Cash';
             const feePercent = app.bankFeePercentage || 2.75;
+            const qrFeePercent = app.qrFeePercentage || 1;
+            const qrThreshold = app.qrFeeThreshold || 5000;
             
             if (paymentMethod === 'Visa/Master') {
-                bankFee = currentTotal * (feePercent / 100);
+                bankFee += currentTotal * (feePercent / 100);
+            } else if (paymentMethod === 'QR') {
+                if (currentTotal > qrThreshold) {
+                    bankFee += currentTotal * (qrFeePercent / 100);
+                }
             } else if (paymentMethod === 'Mixed') {
                 const cardAmt = parseFloat(document.getElementById('mix-card').value) || 0;
-                bankFee = cardAmt * (feePercent / 100);
+                const qrAmt = parseFloat(document.getElementById('mix-qr').value) || 0;
+                
+                bankFee += cardAmt * (feePercent / 100);
+                if (qrAmt > qrThreshold) {
+                    bankFee += qrAmt * (qrFeePercent / 100);
+                }
             }
 
             const totalProfit = currentTotal - totalCost - bankFee;
@@ -3988,12 +3999,23 @@ var views = window.views = {
                 // --- NEW: Calculate Item Bank Fee ---
                 let itemBankFee = 0;
                 const feePercent = app.bankFeePercentage || 2.75;
+                const qrFeePercent = app.qrFeePercentage || 1;
+                const qrThreshold = app.qrFeeThreshold || 5000;
+
                 if (paymentMethod === 'Visa/Master') {
-                    itemBankFee = itemFinalTotal * (feePercent / 100);
+                    itemBankFee += itemFinalTotal * (feePercent / 100);
+                } else if (paymentMethod === 'QR') {
+                    if (finalTotal > qrThreshold) {
+                        itemBankFee += itemFinalTotal * (qrFeePercent / 100);
+                    }
                 } else if (paymentMethod === 'Mixed' && finalTotal > 0) {
                     // Proportional fee based on the item's contribution to the bill
                     const itemRatio = itemFinalTotal / finalTotal;
-                    itemBankFee = (cardAmt * itemRatio) * (feePercent / 100);
+                    itemBankFee += (cardAmt * itemRatio) * (feePercent / 100);
+                    
+                    if (qrAmt > qrThreshold) {
+                        itemBankFee += (qrAmt * itemRatio) * (qrFeePercent / 100);
+                    }
                 }
                 
                 itemProfit = itemProfit - itemBankFee;
@@ -5888,6 +5910,28 @@ var views = window.views = {
                          <span class="text-gray-500 font-bold">%</span>
                         </div>
                     </div>
+
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                        <div>
+                            <h4 class="font-bold text-gray-800 text-sm">QR Payment Fee (%)</h4>
+                            <p class="text-xs text-gray-500">Deducted from Bill Profit for QR payments over the threshold.</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                         <input type="number" step="0.01" id="setting-qr-fee" value="${app.qrFeePercentage || 1}" onchange="views.updateQRFeeSetting(this.value)" class="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold w-24 text-right">
+                         <span class="text-gray-500 font-bold">%</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                        <div>
+                            <h4 class="font-bold text-gray-800 text-sm">QR Fee Threshold (Rs.)</h4>
+                            <p class="text-xs text-gray-500">QR Fee applies only if the QR payment amount exceeds this value.</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                         <input type="number" step="0.01" id="setting-qr-threshold" value="${app.qrFeeThreshold || 5000}" onchange="views.updateQRThresholdSetting(this.value)" class="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold w-24 text-right">
+                         <span class="text-gray-500 font-bold">Rs.</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -6414,6 +6458,20 @@ var views = window.views = {
         utils.showNotification('Bank fee percentage saved successfully', 'success');
     },
 
+    updateQRFeeSetting: async (val) => {
+        const fee = parseFloat(val);
+        app.qrFeePercentage = fee;
+        await db.settings.put({ key: 'qrFeePercentage', value: String(fee) });
+        utils.showNotification('QR fee percentage saved successfully', 'success');
+    },
+
+    updateQRThresholdSetting: async (val) => {
+        const threshold = parseFloat(val);
+        app.qrFeeThreshold = threshold;
+        await db.settings.put({ key: 'qrFeeThreshold', value: String(threshold) });
+        utils.showNotification('QR fee threshold saved successfully', 'success');
+    },
+
     backupData: async () => {
         try {
             utils.showNotification('Preparing system backup...', 'info');
@@ -6422,21 +6480,27 @@ var views = window.views = {
                 'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 'purchases',
                 'settings', 'held_bills', 'item_batches', 'audit_logs', 'users', 'sales_archive', 'stock_in_archive', 'purchases_archive', 'closing_balances'
             ];
-            const backupDataMap = {};
+            
+            const backupHeader = `{"timestamp":"${new Date().toISOString()}","version":"23","data":{`;
+            const blobParts = [backupHeader];
 
-            // Parallel fetch all data for faster backup
-            await Promise.all(tables.map(async (table) => {
-                backupDataMap[table] = await db[table].toArray();
-            }));
+            // Iterative fetch to prevent Out-Of-Memory crashes on huge databases
+            for (let i = 0; i < tables.length; i++) {
+                const table = tables[i];
+                utils.showNotification(`Backing up ${table}...`, 'info');
+                const records = await db[table].toArray();
+                const tableJson = JSON.stringify(records);
+                
+                blobParts.push(`"${table}":${tableJson}`);
+                
+                if (i < tables.length - 1) {
+                    blobParts.push(',');
+                }
+            }
+            
+            blobParts.push('}}');
 
-            const backup = {
-                timestamp: new Date().toISOString(),
-                version: '23', 
-                data: backupDataMap
-            };
-
-            const jsonString = JSON.stringify(backup);
-            const blob = new Blob([jsonString], { type: 'application/json' });
+            const blob = new Blob(blobParts, { type: 'application/json' });
             const url = URL.createObjectURL(blob);
 
             const link = document.createElement('a');

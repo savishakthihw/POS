@@ -120,6 +120,20 @@ window.app = {
             } else {
                 app.bankFeePercentage = 2.75;
             }
+
+            const qrFee = await db.settings.get('qrFeePercentage');
+            if (qrFee) {
+                app.qrFeePercentage = parseFloat(qrFee.value);
+            } else {
+                app.qrFeePercentage = 1; // default to 1%
+            }
+
+            const qrThreshold = await db.settings.get('qrFeeThreshold');
+            if (qrThreshold) {
+                app.qrFeeThreshold = parseFloat(qrThreshold.value);
+            } else {
+                app.qrFeeThreshold = 5000; // default to 5000
+            }
         } catch (err) {
             console.error('Error loading settings:', err);
         }
