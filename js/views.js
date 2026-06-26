@@ -2270,11 +2270,17 @@ var views = window.views = {
         try {
             if (!isSilent) utils.showNotification('Recalculating... Please wait', 'info');
 
-            await db.transaction('rw', db.inventory, db.item_master, db.stock_in, db.sales, db.item_batches, async () => {
+            await db.transaction('rw', db.inventory, db.item_master, db.stock_in, db.stock_in_archive, db.sales, db.sales_archive, db.item_batches, async () => {
                 await db.inventory.clear();
                 const items = await db.item_master.toArray();
-                let allStockIn = await db.stock_in.toArray();
-                const allSales = await db.sales.toArray();
+                
+                const activeStockIn = await db.stock_in.toArray();
+                const archiveStockIn = await db.stock_in_archive.toArray();
+                let allStockIn = [...activeStockIn, ...archiveStockIn];
+                
+                const activeSales = await db.sales.toArray();
+                const archiveSales = await db.sales_archive.toArray();
+                const allSales = [...activeSales, ...archiveSales];
                 const stockInMap = new Map();
                 allStockIn.forEach(s => {
                     if (!stockInMap.has(s.itemId)) stockInMap.set(s.itemId, []);
@@ -2298,11 +2304,21 @@ var views = window.views = {
                     if (item && ((!sin.mrp || sin.mrp <= 0) || (!sin.costPrice || sin.costPrice <= 0))) {
                         sin.mrp = (sin.mrp > 0) ? sin.mrp : (parseFloat(item.listPrice) || 0);
                         sin.costPrice = (sin.costPrice > 0) ? sin.costPrice : (parseFloat(item.costPrice) || 0);
-                        await db.stock_in.update(sin.id, {
-                            mrp: sin.mrp,
-                            costPrice: sin.costPrice,
-                            total: (parseFloat(sin.qty) || 0) * sin.costPrice
-                        });
+                        
+                        // Safely update the correct table based on whether it's an archive record
+                        if (sin.archiveYear) {
+                            await db.stock_in_archive.update(sin.id, {
+                                mrp: sin.mrp,
+                                costPrice: sin.costPrice,
+                                total: (parseFloat(sin.qty) || 0) * sin.costPrice
+                            });
+                        } else {
+                            await db.stock_in.update(sin.id, {
+                                mrp: sin.mrp,
+                                costPrice: sin.costPrice,
+                                total: (parseFloat(sin.qty) || 0) * sin.costPrice
+                            });
+                        }
                     }
                 }
 
@@ -2486,27 +2502,28 @@ var views = window.views = {
             await views.backupData();
             utils.showNotification('Safety backup created. Processing data...', 'info');
 
-            await db.transaction('rw', db.sales, db.sales_archive, db.stock_in, db.stock_in_archive, db.audit_logs, db.purchases, db.purchases_archive, async () => {
-                const targetSales = await db.sales.filter(s => {
-                    if (!s.date) return false;
-                    const d = new Date(s.date);
-                    const isCorrectYear = !isNaN(d.getTime()) && d.getFullYear() === year;
-                    return isCorrectYear && s.paymentStatus !== 'Pending'; // PREVENT ARCHIVE: Keep pending payments in main table for tracking
-                }).toArray();
+            await db.transaction('rw', db.sales, db.sales_archive, db.stock_in, db.stock_in_archive, db.audit_logs, db.purchases, db.purchases_archive, db.expenses, db.expenses_archive, async () => {
+                const startDate = `${year}-01-01`;
+                const endDate = `${year}-12-31T23:59:59`;
 
-                const targetStockIn = await db.stock_in.filter(sin => {
-                    if (!sin.date) return false;
-                    const d = new Date(sin.date);
-                    return !isNaN(d.getTime()) && d.getFullYear() === year;
-                }).toArray();
+                const targetSales = await db.sales
+                    .where('date').between(startDate, endDate)
+                    .filter(s => s.paymentStatus !== 'Pending')
+                    .toArray();
 
-                const targetPurchases = await db.purchases.filter(p => {
-                    if (!p.date) return false;
-                    const d = new Date(p.date);
-                    return !isNaN(d.getTime()) && d.getFullYear() === year;
-                }).toArray();
+                const targetStockIn = await db.stock_in
+                    .where('date').between(startDate, endDate)
+                    .toArray();
 
-                if (targetSales.length === 0 && targetStockIn.length === 0 && targetPurchases.length === 0) {
+                const targetPurchases = await db.purchases
+                    .where('date').between(startDate, endDate)
+                    .toArray();
+
+                const targetExpenses = await db.expenses
+                    .where('date').between(startDate, endDate)
+                    .toArray();
+
+                if (targetSales.length === 0 && targetStockIn.length === 0 && targetPurchases.length === 0 && targetExpenses.length === 0) {
                     throw new Error(`No records found for the year ${year}.`);
                 }
 
@@ -2521,28 +2538,7 @@ var views = window.views = {
                     await db.sales.bulkDelete(targetSales.map(s => s.id));
                 }
 
-                // --- 2. ARCHIVE STOCK IN AND CALCULATE CONSOLIDATION ---
-                // We map all activity (In and Out) to find the final result for that year
-                const consolidationMap = {}; // Key: itemId||batchId
-
-                // Group Stock In (Positive)
-                targetStockIn.forEach(sin => {
-                    const key = `${sin.itemId}||${sin.batchId || 'B001'}`;
-                    if (!consolidationMap[key]) {
-                        consolidationMap[key] = { qty: 0, itemName: sin.itemName, mrp: sin.mrp, cost: sin.costPrice, supplierId: sin.supplierId };
-                    }
-                    consolidationMap[key].qty += (parseFloat(sin.qty) || 0);
-                });
-
-                // Group Sales (Negative)
-                targetSales.forEach(s => {
-                    if (s.paymentStatus === 'Cancelled') return; // BUG FIX: Skip cancelled sales for stock consolidation
-                    const key = `${s.itemId}||${s.batchId || 'B001'}`;
-                    if (!consolidationMap[key]) {
-                        consolidationMap[key] = { qty: 0, itemName: s.itemName, mrp: s.mrp, cost: s.costPrice, supplierId: s.supplierId };
-                    }
-                    consolidationMap[key].qty -= (parseFloat(s.qty) || 0);
-                });
+                // --- 2. ARCHIVE STOCK IN ---
 
                 // Move original Stock In to Archive
                 if (targetStockIn.length > 0) {
@@ -2566,33 +2562,18 @@ var views = window.views = {
                     await db.purchases.bulkDelete(targetPurchases.map(p => p.id));
                 }
 
-                // --- 3. CREATE CONSOLIDATED BALANCE FORWARD ---
-                const consolidationRecords = [];
-                for (const key in consolidationMap) {
-                    const [itemId, batchId] = key.split('||');
-                    const data = consolidationMap[key];
-                    
-                    if (data.qty !== 0) {
-                        consolidationRecords.push({
-                            date: `${year}-12-31`,
-                            itemId: itemId,
-                            itemName: data.itemName,
-                            batchId: batchId,
-                            qty: data.qty,
-                            costPrice: data.cost,
-                            mrp: data.mrp,
-                            total: data.qty * data.cost,
-                            remarks: `ANNUAL BALANCE CARRYOVER ${year}`,
-                            supplierId: data.supplierId || 'SYSTEM'
-                        });
-                    }
-                }
-                
-                if (consolidationRecords.length > 0) {
-                    await db.stock_in.bulkAdd(consolidationRecords);
+                // --- 2.6 ARCHIVE EXPENSES ---
+                if (targetExpenses.length > 0) {
+                    const archiveExpenses = targetExpenses.map(e => {
+                        let ns = { ...e, archiveYear: year };
+                        delete ns.id;
+                        return ns;
+                    });
+                    await db.expenses_archive.bulkAdd(archiveExpenses);
+                    await db.expenses.bulkDelete(targetExpenses.map(e => e.id));
                 }
 
-                await utils.logAction('Annual Closing', `Archived Year ${year}: ${targetSales.length} Sales, ${targetStockIn.length} Purchases. Created ${consolidationRecords.length} Carryover records.`);
+                await utils.logAction('Annual Closing', `Archived Year ${year}: ${targetSales.length} Sales, ${targetStockIn.length} Stock-In, ${targetPurchases.length} Purchases, ${targetExpenses.length} Expenses.`);
             });
 
             utils.showNotification(`Annual Closing for ${year} complete! System history has been consolidated.`, 'success');
@@ -2696,6 +2677,7 @@ var views = window.views = {
         window.posCart = [];
         window.posReturnMode = false; // Initialize Return Mode state
         window.posQuotationMode = false; // Initialize Quotation Mode state
+        window.posCardType = 'Visa/Master'; // Reset card type to default (Visa/Master) on each session
 
         // Cache items for fast search (Force reload to get latest useBatch and prices)
         app.itemCache = await db.item_master.toArray();
@@ -2932,6 +2914,20 @@ var views = window.views = {
                             </div>
                         </div>
 
+                        <!-- Card Type Selector (Visa/Master vs Amex) - shown when Card is selected -->
+                        <div id="card-type-section" class="hidden mb-4 p-3 bg-indigo-50/60 border border-indigo-100 rounded-xl animate-fade-in">
+                            <label class="block text-[10px] font-bold text-indigo-500 uppercase mb-2"><i class="fa-solid fa-credit-card mr-1"></i>Card Network</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button type="button" id="card-type-visa" onclick="views.setCardType('Visa/Master')" class="py-2 px-3 rounded-lg border-2 border-primary bg-white text-primary font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm">
+                                    <i class="fa-brands fa-cc-visa text-base"></i><i class="fa-brands fa-cc-mastercard text-base"></i> Visa / Master
+                                </button>
+                                <button type="button" id="card-type-amex" onclick="views.setCardType('Amex')" class="py-2 px-3 rounded-lg border-2 border-gray-200 bg-gray-50 text-gray-500 font-bold text-xs flex items-center justify-center gap-1.5 transition-all">
+                                    <i class="fa-brands fa-cc-amex text-base"></i> Amex
+                                </button>
+                            </div>
+                            <div id="card-type-fee-label" class="text-[10px] text-indigo-400 font-bold mt-1.5 text-right">Fee: ${app.bankFeePercentage || 3}%</div>
+                        </div>
+
                         <!-- Mixed Payment Breakdown -->
                         <div id="mixed-payment-section" class="hidden mb-4 p-3 bg-purple-50/50 border border-purple-100 rounded-xl space-y-2 animate-fade-in">
                             <div class="grid grid-cols-2 gap-2">
@@ -2951,6 +2947,19 @@ var views = window.views = {
                                     <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1">QR Amt</label>
                                     <input type="number" id="mix-qr" placeholder="0.00" class="w-full px-3 py-1.5 text-sm font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-400 outline-none mix-input">
                                 </div>
+                            </div>
+                            <!-- Card Type for Mixed Payment -->
+                            <div class="pt-2 border-t border-purple-100">
+                                <label class="block text-[10px] font-bold text-purple-500 uppercase mb-1.5"><i class="fa-solid fa-credit-card mr-1"></i>Card Network (for Card Amt)</label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button type="button" id="mix-card-type-visa" onclick="views.setCardType('Visa/Master')" class="py-1.5 px-2 rounded-lg border-2 border-primary bg-white text-primary font-bold text-xs flex items-center justify-center gap-1 transition-all shadow-sm">
+                                        <i class="fa-brands fa-cc-visa"></i><i class="fa-brands fa-cc-mastercard"></i> Visa/Master
+                                    </button>
+                                    <button type="button" id="mix-card-type-amex" onclick="views.setCardType('Amex')" class="py-1.5 px-2 rounded-lg border-2 border-gray-200 bg-gray-50 text-gray-500 font-bold text-xs flex items-center justify-center gap-1 transition-all">
+                                        <i class="fa-brands fa-cc-amex"></i> Amex
+                                    </button>
+                                </div>
+                                <div id="mix-card-fee-label" class="text-[10px] text-purple-400 font-bold mt-1 text-right">Card Fee: ${app.bankFeePercentage || 3}%</div>
                             </div>
                         </div>
 
@@ -3184,8 +3193,12 @@ var views = window.views = {
         // --- Payment Method UI Logic ---
         const methodRadios = document.querySelectorAll('input[name="payment-method"]');
         const mixedSection = document.getElementById('mixed-payment-section');
+        const cardTypeSection = document.getElementById('card-type-section');
         const paidInput = document.getElementById('bill-paid');
         const mixInputs = document.querySelectorAll('.mix-input');
+
+        // Initialize card type state (default: Visa/Master)
+        window.posCardType = window.posCardType || 'Visa/Master';
 
         const updateMixedTotal = () => {
             let total = 0;
@@ -3199,11 +3212,20 @@ var views = window.views = {
             radio.addEventListener('change', (e) => {
                 if (e.target.value === 'Mixed') {
                     mixedSection.classList.remove('hidden');
+                    cardTypeSection.classList.add('hidden');
                     paidInput.readOnly = true;
                     paidInput.classList.add('bg-indigo-50/50');
                     updateMixedTotal();
+                } else if (e.target.value === 'Visa/Master') {
+                    mixedSection.classList.add('hidden');
+                    cardTypeSection.classList.remove('hidden');
+                    paidInput.readOnly = false;
+                    paidInput.classList.remove('bg-indigo-50/50');
+                    // Reset to Visa/Master on re-selection
+                    views.setCardType(window.posCardType || 'Visa/Master');
                 } else {
                     mixedSection.classList.add('hidden');
+                    cardTypeSection.classList.add('hidden');
                     paidInput.readOnly = false;
                     paidInput.classList.remove('bg-indigo-50/50');
                     if (e.target.value === 'Credit') {
@@ -3726,7 +3748,11 @@ var views = window.views = {
             
             let bankFee = 0;
             const paymentMethod = document.querySelector('input[name="payment-method"]:checked')?.value || 'Cash';
-            const feePercent = app.bankFeePercentage || 2.75;
+            // Determine effective card fee based on card type (Visa/Master or Amex)
+            const cardType = window.posCardType || 'Visa/Master';
+            const feePercent = cardType === 'Amex'
+                ? (app.amexFeePercentage || 3.75)
+                : (app.bankFeePercentage || 3);
             const qrFeePercent = app.qrFeePercentage || 1;
             const qrThreshold = app.qrFeeThreshold || 5000;
             
@@ -3739,7 +3765,7 @@ var views = window.views = {
             } else if (paymentMethod === 'Mixed') {
                 const cardAmt = parseFloat(document.getElementById('mix-card').value) || 0;
                 const qrAmt = parseFloat(document.getElementById('mix-qr').value) || 0;
-                
+                // Use posCardType for mixed card portion fee (Visa/Master or Amex)
                 bankFee += cardAmt * (feePercent / 100);
                 if (qrAmt > qrThreshold) {
                     bankFee += qrAmt * (qrFeePercent / 100);
@@ -3996,9 +4022,14 @@ var views = window.views = {
                 let itemProfit = itemFinalTotal - (item.cost * item.qty);
                 const customerName = document.getElementById('pos-customer').value.trim() || 'Walk-in';
 
-                // --- NEW: Calculate Item Bank Fee ---
+                // --- Calculate Item Bank Fee based on card type ---
                 let itemBankFee = 0;
-                const feePercent = app.bankFeePercentage || 2.75;
+                // Use Amex fee if Amex card is selected, otherwise use Visa/Master fee
+                // This applies to both pure Card payment AND the card portion of Mixed payment
+                const checkoutCardType = window.posCardType || 'Visa/Master';
+                const feePercent = checkoutCardType === 'Amex'
+                    ? (app.amexFeePercentage || 3.75)
+                    : (app.bankFeePercentage || 3);
                 const qrFeePercent = app.qrFeePercentage || 1;
                 const qrThreshold = app.qrFeeThreshold || 5000;
 
@@ -4010,6 +4041,7 @@ var views = window.views = {
                     }
                 } else if (paymentMethod === 'Mixed' && finalTotal > 0) {
                     // Proportional fee based on the item's contribution to the bill
+                    // Card portion uses posCardType fee (Visa/Master or Amex)
                     const itemRatio = itemFinalTotal / finalTotal;
                     itemBankFee += (cardAmt * itemRatio) * (feePercent / 100);
                     
@@ -4049,6 +4081,7 @@ var views = window.views = {
                     profit: itemProfit,
                     bankFee: itemBankFee,
                     method: paymentMethod,
+                    cardType: paymentMethod === 'Visa/Master' ? (window.posCardType || 'Visa/Master') : null, // Track Amex vs Visa/Master
                     paymentStatus: paymentStatus,
                     settledDate: settledDate,
                     unit: item.unit || 'Pcs',
@@ -4124,7 +4157,7 @@ var views = window.views = {
                             <span>Time: ${saleTime}</span>
                         </div>
                         <div style="font-size: 0.8em; text-align: left; margin-top: 1px; font-weight: bold;">
-                            <div>Method: ${paymentMethod === 'Mixed' ? 'MIXED' : paymentMethod} ${paymentMethod === 'Credit' || paidAmountInput < (finalTotal - 0.01) ? '(PENDING)' : '(PAID)'}</div>
+                            <div>Method: ${paymentMethod === 'Mixed' ? 'MIXED' : paymentMethod === 'Visa/Master' ? `CARD (${window.posCardType || 'Visa/Master'})` : paymentMethod} ${paymentMethod === 'Credit' || paidAmountInput < (finalTotal - 0.01) ? '(PENDING)' : '(PAID)'}</div>
                         </div>
                     </div>
                     
@@ -4572,6 +4605,12 @@ var views = window.views = {
                         <button id="archive-tab-stock" onclick="views.switchArchiveTab('stock')" class="px-6 py-2 rounded-lg text-xs font-bold transition-all text-gray-500 hover:text-gray-700">
                             <i class="fa-solid fa-truck-ramp-box mr-2"></i>Stock-In Archive
                         </button>
+                        <button id="archive-tab-purchases" onclick="views.switchArchiveTab('purchases')" class="px-6 py-2 rounded-lg text-xs font-bold transition-all text-gray-500 hover:text-gray-700">
+                            <i class="fa-solid fa-cart-shopping mr-2"></i>Purchases Archive
+                        </button>
+                        <button id="archive-tab-expenses" onclick="views.switchArchiveTab('expenses')" class="px-6 py-2 rounded-lg text-xs font-bold transition-all text-gray-500 hover:text-gray-700">
+                            <i class="fa-solid fa-money-bill-transfer mr-2"></i>Expenses Archive
+                        </button>
                     </div>
 
                     <!-- Controls -->
@@ -4597,14 +4636,14 @@ var views = window.views = {
                         </select>
                     </div>
 
-                    <button onclick="views.exportToPDF('archive-table-container', 'Archive Report')" class="px-4 py-2.5 bg-slate-600 text-white rounded-xl hover:bg-slate-700 transition-all text-sm font-semibold shadow-sm">
+                    <button onclick="views.exportToPDF('archive-data-table', 'Archive Report')" class="px-4 py-2.5 bg-slate-600 text-white rounded-xl hover:bg-slate-700 transition-all text-sm font-semibold shadow-sm">
                         <i class="fa-solid fa-file-pdf mr-1"></i> Export PDF
                     </button>
                 </div>
 
                 <div id="archive-table-container" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex-1 flex flex-col">
                      <div class="overflow-y-auto flex-1">
-                        <table class="w-full text-sm text-left">
+                        <table id="archive-data-table" class="w-full text-sm text-left">
                             <thead id="archive-table-head" class="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0">
                                 <!-- Head injected by loadArchiveTable -->
                             </thead>
@@ -4622,20 +4661,17 @@ var views = window.views = {
 
     switchArchiveTab: (tab) => {
         app.activeArchiveTab = tab;
-        const salesBtn = document.getElementById('archive-tab-sales');
-        const stockBtn = document.getElementById('archive-tab-stock');
-        
-        if (tab === 'sales') {
-            salesBtn.classList.add('bg-white', 'text-indigo-600', 'shadow-sm');
-            salesBtn.classList.remove('text-gray-500');
-            stockBtn.classList.remove('bg-white', 'text-indigo-600', 'shadow-sm');
-            stockBtn.classList.add('text-gray-500');
-        } else {
-            stockBtn.classList.add('bg-white', 'text-indigo-600', 'shadow-sm');
-            stockBtn.classList.remove('text-gray-500');
-            salesBtn.classList.remove('bg-white', 'text-indigo-600', 'shadow-sm');
-            salesBtn.classList.add('text-gray-500');
-        }
+        ['sales', 'stock', 'purchases', 'expenses'].forEach(t => {
+            const btn = document.getElementById(`archive-tab-${t}`);
+            if (!btn) return;
+            if (t === tab) {
+                btn.classList.add('bg-white', 'text-indigo-600', 'shadow-sm');
+                btn.classList.remove('text-gray-500');
+            } else {
+                btn.classList.add('text-gray-500');
+                btn.classList.remove('bg-white', 'text-indigo-600', 'shadow-sm');
+            }
+        });
         views.loadArchiveTable();
     },
 
@@ -4690,7 +4726,7 @@ var views = window.views = {
                     <td class="px-2 py-2 text-right"><span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[10px] font-black">${s.archiveYear}</span></td>
                 </tr>
             `).join('');
-        } else {
+        } else if (tab === 'stock') {
             thead.innerHTML = `
                 <tr>
                     <th class="px-3 py-3">Date</th>
@@ -4728,6 +4764,82 @@ var views = window.views = {
                     <td class="px-3 py-2 text-right text-gray-500">${utils.formatCurrencyNoCents(s.costPrice)}</td>
                     <td class="px-3 py-2 text-right font-bold text-gray-900">${utils.formatCurrencyNoCents(s.total)}</td>
                     <td class="px-2 py-2 text-right"><span class="bg-indigo-50 text-indigo-500 px-2 py-0.5 rounded text-[10px] font-bold">${s.batchId || 'B001'}</span></td>
+                    <td class="px-2 py-2 text-right"><span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[10px] font-black">${s.archiveYear}</span></td>
+                </tr>
+            `).join('');
+        } else if (tab === 'purchases') {
+            thead.innerHTML = `
+                <tr>
+                    <th class="px-3 py-3">Date</th>
+                    <th class="px-3 py-3">Supplier</th>
+                    <th class="px-3 py-3">Invoice No</th>
+                    <th class="px-3 py-3 text-right">Total Bill</th>
+                    <th class="px-3 py-3 text-right">Paid</th>
+                    <th class="px-3 py-3 text-right">Balance</th>
+                    <th class="px-3 py-3">Method</th>
+                    <th class="px-2 py-3 text-right">Year</th>
+                </tr>
+            `;
+
+            archive = await db.purchases_archive.orderBy('date').reverse().toArray();
+            if (year) {
+                const yearInt = parseInt(year);
+                archive = archive.filter(s => s.archiveYear === yearInt);
+            }
+
+            if (query) {
+                const q = query.toLowerCase();
+                archive = archive.filter(s => 
+                    String(s.supplierName).toLowerCase().includes(q) || 
+                    String(s.invoiceNo).toLowerCase().includes(q)
+                );
+            }
+
+            tbody.innerHTML = archive.map(s => `
+                <tr class="hover:bg-gray-50/80 transition-all border-b border-gray-50">
+                    <td class="px-3 py-2 text-gray-500 text-xs">${utils.formatDate(s.date)}</td>
+                    <td class="px-3 py-2 font-bold text-gray-800">${s.supplierName || '---'}</td>
+                    <td class="px-3 py-2 text-gray-700 font-medium">${s.invoiceNo || '---'}</td>
+                    <td class="px-3 py-2 text-right font-bold text-gray-900">${utils.formatCurrencyNoCents(s.totalBill)}</td>
+                    <td class="px-3 py-2 text-right text-emerald-600 font-medium">${utils.formatCurrencyNoCents(s.paidAmount)}</td>
+                    <td class="px-3 py-2 text-right text-red-500 font-medium">${utils.formatCurrencyNoCents(s.balance)}</td>
+                    <td class="px-3 py-2 text-xs text-gray-500">${s.method || '---'}</td>
+                    <td class="px-2 py-2 text-right"><span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[10px] font-black">${s.archiveYear}</span></td>
+                </tr>
+            `).join('');
+        } else if (tab === 'expenses') {
+            thead.innerHTML = `
+                <tr>
+                    <th class="px-3 py-3">Date</th>
+                    <th class="px-3 py-3">Category</th>
+                    <th class="px-3 py-3">Description</th>
+                    <th class="px-3 py-3 text-right">Amount</th>
+                    <th class="px-3 py-3">User</th>
+                    <th class="px-2 py-3 text-right">Year</th>
+                </tr>
+            `;
+
+            archive = await db.expenses_archive.orderBy('date').reverse().toArray();
+            if (year) {
+                const yearInt = parseInt(year);
+                archive = archive.filter(s => s.archiveYear === yearInt);
+            }
+
+            if (query) {
+                const q = query.toLowerCase();
+                archive = archive.filter(s => 
+                    String(s.category).toLowerCase().includes(q) || 
+                    String(s.description).toLowerCase().includes(q)
+                );
+            }
+
+            tbody.innerHTML = archive.map(s => `
+                <tr class="hover:bg-gray-50/80 transition-all border-b border-gray-50">
+                    <td class="px-3 py-2 text-gray-500 text-xs">${utils.formatDate(s.date)}</td>
+                    <td class="px-3 py-2 font-bold text-gray-800"><span class="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs">${s.category || '---'}</span></td>
+                    <td class="px-3 py-2 text-gray-700 font-medium">${s.description || '---'}</td>
+                    <td class="px-3 py-2 text-right font-bold text-red-600">${utils.formatCurrencyNoCents(s.amount)}</td>
+                    <td class="px-3 py-2 text-xs text-gray-500 uppercase">${s.user || '---'}</td>
                     <td class="px-2 py-2 text-right"><span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[10px] font-black">${s.archiveYear}</span></td>
                 </tr>
             `).join('');
@@ -5900,14 +6012,27 @@ var views = window.views = {
                 </div>
 
                 <div class="p-8 space-y-6">
-                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                    <!-- Visa/Master Fee -->
+                    <div class="flex items-center justify-between p-4 bg-indigo-50/40 rounded-xl border border-indigo-100">
                         <div>
-                            <h4 class="font-bold text-gray-800 text-sm">Bank Card Processing Fee (%)</h4>
-                            <p class="text-xs text-gray-500">Automatically deducted from Bill Profit when Visa/Master is used. Does not show on customer receipt.</p>
+                            <h4 class="font-bold text-gray-800 text-sm flex items-center gap-2"><i class="fa-brands fa-cc-visa text-indigo-500"></i><i class="fa-brands fa-cc-mastercard text-red-500"></i> Visa / Master Card Fee (%)</h4>
+                            <p class="text-xs text-gray-500">Deducted from Profit when Visa or Mastercard is used. Does not show on receipt.</p>
                         </div>
                         <div class="flex items-center gap-3">
-                         <input type="number" step="0.01" id="setting-bank-fee" value="${app.bankFeePercentage || 2.75}" onchange="views.updateBankFeeSetting(this.value)" class="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm font-bold w-24 text-right">
-                         <span class="text-gray-500 font-bold">%</span>
+                         <input type="number" step="0.01" id="setting-bank-fee" value="${app.bankFeePercentage || 3}" onchange="views.updateBankFeeSetting(this.value)" class="bg-white border border-indigo-200 rounded-lg px-3 py-2 text-sm font-bold w-24 text-right focus:ring-2 focus:ring-indigo-400 outline-none">
+                         <span class="text-indigo-500 font-bold">%</span>
+                        </div>
+                    </div>
+
+                    <!-- Amex Fee -->
+                    <div class="flex items-center justify-between p-4 bg-blue-50/40 rounded-xl border border-blue-100">
+                        <div>
+                            <h4 class="font-bold text-gray-800 text-sm flex items-center gap-2"><i class="fa-brands fa-cc-amex text-blue-600"></i> American Express (Amex) Fee (%)</h4>
+                            <p class="text-xs text-gray-500">Deducted from Profit when Amex card is selected. Usually higher than Visa/Master.</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                         <input type="number" step="0.01" id="setting-amex-fee" value="${app.amexFeePercentage || 3.75}" onchange="views.updateAmexFeeSetting(this.value)" class="bg-white border border-blue-200 rounded-lg px-3 py-2 text-sm font-bold w-24 text-right focus:ring-2 focus:ring-blue-400 outline-none">
+                         <span class="text-blue-500 font-bold">%</span>
                         </div>
                     </div>
 
@@ -6453,9 +6578,18 @@ var views = window.views = {
 
     updateBankFeeSetting: async (val) => {
         const fee = parseFloat(val);
+        if (isNaN(fee) || fee < 0) { utils.showNotification('Invalid fee value', 'error'); return; }
         app.bankFeePercentage = fee;
         await db.settings.put({ key: 'bankFeePercentage', value: String(fee) });
-        utils.showNotification('Bank fee percentage saved successfully', 'success');
+        utils.showNotification('Visa/Master fee saved successfully', 'success');
+    },
+
+    updateAmexFeeSetting: async (val) => {
+        const fee = parseFloat(val);
+        if (isNaN(fee) || fee < 0) { utils.showNotification('Invalid fee value', 'error'); return; }
+        app.amexFeePercentage = fee;
+        await db.settings.put({ key: 'amexFeePercentage', value: String(fee) });
+        utils.showNotification('Amex fee saved successfully', 'success');
     },
 
     updateQRFeeSetting: async (val) => {
@@ -6472,13 +6606,61 @@ var views = window.views = {
         utils.showNotification('QR fee threshold saved successfully', 'success');
     },
 
+    setCardType: (type) => {
+        window.posCardType = type;
+
+        // Button sets: [card-only panel, mixed payment panel]
+        const visaBtns = [
+            document.getElementById('card-type-visa'),
+            document.getElementById('mix-card-type-visa')
+        ].filter(Boolean);
+        const amexBtns = [
+            document.getElementById('card-type-amex'),
+            document.getElementById('mix-card-type-amex')
+        ].filter(Boolean);
+        const feeLabels = [
+            document.getElementById('card-type-fee-label'),
+            document.getElementById('mix-card-fee-label')
+        ].filter(Boolean);
+
+        if (type === 'Amex') {
+            amexBtns.forEach(btn => {
+                btn.classList.remove('border-gray-200', 'bg-gray-50', 'text-gray-500');
+                btn.classList.add('border-blue-500', 'bg-blue-50', 'text-blue-600', 'shadow-sm');
+            });
+            visaBtns.forEach(btn => {
+                btn.classList.remove('border-primary', 'bg-white', 'text-primary', 'shadow-sm');
+                btn.classList.add('border-gray-200', 'bg-gray-50', 'text-gray-500');
+            });
+            feeLabels.forEach(el => {
+                if (el.id === 'mix-card-fee-label') el.textContent = `Card Fee: ${app.amexFeePercentage || 3.75}%`;
+                else el.textContent = `Fee: ${app.amexFeePercentage || 3.75}%`;
+            });
+        } else {
+            visaBtns.forEach(btn => {
+                btn.classList.remove('border-gray-200', 'bg-gray-50', 'text-gray-500');
+                btn.classList.add('border-primary', 'bg-white', 'text-primary', 'shadow-sm');
+            });
+            amexBtns.forEach(btn => {
+                btn.classList.remove('border-blue-500', 'bg-blue-50', 'text-blue-600', 'shadow-sm');
+                btn.classList.add('border-gray-200', 'bg-gray-50', 'text-gray-500');
+            });
+            feeLabels.forEach(el => {
+                if (el.id === 'mix-card-fee-label') el.textContent = `Card Fee: ${app.bankFeePercentage || 3}%`;
+                else el.textContent = `Fee: ${app.bankFeePercentage || 3}%`;
+            });
+        }
+        // Recalculate profit display
+        if (window.posCart && window.posCart.length > 0) views.renderCart();
+    },
+
     backupData: async () => {
         try {
             utils.showNotification('Preparing system backup...', 'info');
 
             const tables = [
                 'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 'purchases',
-                'settings', 'held_bills', 'item_batches', 'audit_logs', 'users', 'sales_archive', 'stock_in_archive', 'purchases_archive', 'closing_balances'
+                'settings', 'held_bills', 'item_batches', 'audit_logs', 'users', 'sales_archive', 'stock_in_archive', 'purchases_archive', 'expenses_archive', 'closing_balances'
             ];
             
             const backupHeader = `{"timestamp":"${new Date().toISOString()}","version":"23","data":{`;
@@ -6488,10 +6670,19 @@ var views = window.views = {
             for (let i = 0; i < tables.length; i++) {
                 const table = tables[i];
                 utils.showNotification(`Backing up ${table}...`, 'info');
-                const records = await db[table].toArray();
-                const tableJson = JSON.stringify(records);
                 
-                blobParts.push(`"${table}":${tableJson}`);
+                blobParts.push(`"${table}":[`);
+                
+                let isFirstRecord = true;
+                await db[table].each(record => {
+                    if (!isFirstRecord) {
+                        blobParts.push(',');
+                    }
+                    blobParts.push(JSON.stringify(record));
+                    isFirstRecord = false;
+                });
+                
+                blobParts.push(']');
                 
                 if (i < tables.length - 1) {
                     blobParts.push(',');

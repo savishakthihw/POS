@@ -4,7 +4,7 @@ window.cloudSync = {
     collections: [
         'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 
         'purchases', 'settings', 'item_batches', 'users', 'held_bills',
-        'sales_archive', 'stock_in_archive', 'purchases_archive', 'closing_balances', 'audit_logs'
+        'sales_archive', 'stock_in_archive', 'purchases_archive', 'expenses_archive', 'closing_balances', 'audit_logs'
     ],
 
 
@@ -121,7 +121,7 @@ window.cloudSync = {
                     const combined = [...updatedRecords, ...newRecords];
                     const seen = new Set();
                     data = combined.filter(doc => {
-                        const uniqueKey = table === 'item_master' || table === 'inventory' ? doc.itemId : (doc.id || doc.key || JSON.stringify(doc));
+                        const uniqueKey = cloudSync.getFirebaseDocId(table, doc);
                         if (seen.has(uniqueKey)) return false;
                         seen.add(uniqueKey);
                         return true;

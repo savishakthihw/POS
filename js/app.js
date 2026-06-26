@@ -118,7 +118,14 @@ window.app = {
             if (bankFee) {
                 app.bankFeePercentage = parseFloat(bankFee.value);
             } else {
-                app.bankFeePercentage = 2.75;
+                app.bankFeePercentage = 3;
+            }
+
+            const amexFee = await db.settings.get('amexFeePercentage');
+            if (amexFee) {
+                app.amexFeePercentage = parseFloat(amexFee.value);
+            } else {
+                app.amexFeePercentage = 3.75; // default Amex fee
             }
 
             const qrFee = await db.settings.get('qrFeePercentage');
@@ -531,6 +538,54 @@ window.app = {
             return;
         }
 
+        // AUTO HOLD BILL: If navigating away from POS with items in cart, auto-save as held bill
+        if (app.currentState === 'pos' && viewId !== 'pos' && window.posCart && window.posCart.length > 0) {
+            app.autoHoldBill().then(() => {
+                app._doNavigate(viewId, ...initArgs);
+            });
+            return;
+        }
+
+        app._doNavigate(viewId, ...initArgs);
+    },
+
+    autoHoldBill: async () => {
+        try {
+            const subtotal = window.posCart.reduce((sum, i) => sum + i.total, 0);
+            const discountInput = document.getElementById('bill-discount');
+            const discount = discountInput ? (parseFloat(discountInput.value) || 0) : 0;
+            const total = subtotal - discount;
+
+            const billData = {
+                timestamp: Date.now(),
+                customerName: 'Auto-Hold',
+                itemCount: window.posCart.reduce((acc, item) => acc + item.qty, 0),
+                total: total,
+                cartData: {
+                    cart: window.posCart,
+                    discount: discount
+                }
+            };
+
+            await db.held_bills.add(billData);
+
+            // Clear the cart after holding
+            window.posCart = [];
+            if (discountInput) discountInput.value = '';
+            const paidInput = document.getElementById('bill-paid');
+            if (paidInput) paidInput.value = '';
+            const balanceEl = document.getElementById('bill-balance');
+            if (balanceEl) balanceEl.innerText = 'Rs. 0.00';
+
+            utils.showNotification('⏸️ Bill auto-saved as Hold Bill', 'success');
+            console.log('Auto Hold Bill: Bill saved successfully');
+        } catch (err) {
+            console.error('Auto Hold Bill Error:', err);
+            utils.showNotification('Warning: Could not auto-save bill', 'error');
+        }
+    },
+
+    _doNavigate: (viewId, ...initArgs) => {
         app.currentState = viewId;
         document.getElementById('global-search').value = '';
 
@@ -882,7 +937,8 @@ window.app = {
                 const fastMovingLowStock = inventoryItems.filter(i => {
                     const soldQtySize = movingMap[i.itemId] || 0;
                     const isCustom = !i.itemId || String(i.itemId).startsWith('CUSTOM-');
-                    return !isCustom && i.currentStock <= i.reorderLevel && soldQtySize > 0;
+                    const isDiscontinued = !!i.isDiscontinued;
+                    return !isCustom && !isDiscontinued && i.currentStock <= i.reorderLevel && soldQtySize > 0;
                 }).sort((a, b) => (movingMap[b.itemId] || 0) - (movingMap[a.itemId] || 0));
 
                 const fastMovingBody = document.getElementById('fast-moving-body');
