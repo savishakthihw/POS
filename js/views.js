@@ -8060,6 +8060,8 @@ var views = window.views = {
                     const yearExpenses = await db.expenses.where('date').startsWith(currentYearKey).toArray();
                     const yearStockIn = await db.stock_in.where('date').startsWith(currentYearKey).toArray();
 
+                    const pendingBillsByMonth = {};
+
                     yearSales.forEach(s => {
                         if (s.paymentStatus === 'Cancelled') return;
                         const m = s.date.substring(0, 7);
@@ -8068,7 +8070,17 @@ var views = window.views = {
                         monthlyData[m].grossProfit += (s.profit || 0);
                         monthlyData[m].salesCost += (s.qty * (s.costPrice || 0));
                         monthlyData[m].soldItemIds.add(s.itemId);
-                        if (s.paymentStatus === 'Pending') monthlyData[m].outstanding += (s.total || 0);
+                        
+                        if (s.paymentStatus === 'Pending') {
+                            const bNo = s.billNo || 'UNKNOWN';
+                            if (!pendingBillsByMonth[bNo]) pendingBillsByMonth[bNo] = { month: m, total: 0, paid: (s.paidAmount || 0) };
+                            pendingBillsByMonth[bNo].total += (s.total || 0);
+                        }
+                    });
+
+                    Object.values(pendingBillsByMonth).forEach(b => {
+                        const due = b.total - b.paid;
+                        if (due > 0) monthlyData[b.month].outstanding += due;
                     });
 
                     yearExpenses.forEach(e => {
