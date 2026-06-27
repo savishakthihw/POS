@@ -8125,31 +8125,54 @@ var views = window.views = {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-50">
-                                ${validMonthKeys.map(m => {
-                                    const d = monthlyData[m];
-                                    const net = d.grossProfit - d.expenses;
-                                    const gMargin = d.revenue > 0 ? (d.grossProfit / d.revenue) * 100 : 0;
-                                    const nMargin = d.revenue > 0 ? (net / d.revenue) * 100 : 0;
-                                    const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
-                                    const deadStockCount = allInventory.filter(item => !d.soldItemIds.has(item.itemId) && item.currentStock > 0).length;
+                                ${(() => {
+                                    let tRev = 0, tGP = 0, tExp = 0, tNP = 0;
+                                    const rows = validMonthKeys.map(m => {
+                                        const d = monthlyData[m];
+                                        const net = d.grossProfit - d.expenses;
+                                        
+                                        tRev += (d.revenue || 0);
+                                        tGP += (d.grossProfit || 0);
+                                        tExp += (d.expenses || 0);
+                                        tNP += net;
 
-                                    return `
-                                        <tr class="hover:bg-gray-50 transition-colors">
-                                            <td class="px-3 py-1.5 font-bold text-gray-700 text-center">${mName}</td>
-                                            <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.revenue)}</td>
-                                            <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${utils.formatNumber(d.grossProfit)}</td>
-                                            <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${gMargin.toFixed(1)}%</td>
-                                            <td class="px-3 py-1.5 text-right font-mono text-orange-600">${utils.formatNumber(d.expenses)}</td>
-                                            <td class="px-3 py-1.5 text-right font-mono font-bold ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${utils.formatNumber(net)}</td>
-                                            <td class="px-3 py-1.5 text-right font-mono ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${nMargin.toFixed(1)}%</td>
-                                            <td class="px-3 py-1.5 text-right font-mono text-indigo-600">${d.soldItemIds.size}</td>
-                                            <td class="px-3 py-1.5 text-right font-mono text-red-600">${deadStockCount}</td>
-                                            <td class="px-3 py-1.5 text-right font-mono text-gray-800">${utils.formatNumber(d.stockIn)}</td>
-                                            <td class="px-3 py-1.5 text-right font-mono text-gray-600">${utils.formatNumber(monthEndValues[m])}</td>
-                                            <td class="px-3 py-1.5 text-right font-mono text-red-700">${utils.formatNumber(d.outstanding)}</td>
+                                        const gMargin = d.revenue > 0 ? (d.grossProfit / d.revenue) * 100 : 0;
+                                        const nMargin = d.revenue > 0 ? (net / d.revenue) * 100 : 0;
+                                        const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
+                                        const deadStockCount = allInventory.filter(item => !d.soldItemIds.has(item.itemId) && item.currentStock > 0).length;
+
+                                        return `
+                                            <tr class="hover:bg-gray-50 transition-colors">
+                                                <td class="px-3 py-1.5 font-bold text-gray-700 text-center">${mName}</td>
+                                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.revenue)}</td>
+                                                <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${utils.formatNumber(d.grossProfit)}</td>
+                                                <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${gMargin.toFixed(1)}%</td>
+                                                <td class="px-3 py-1.5 text-right font-mono text-orange-600">${utils.formatNumber(d.expenses)}</td>
+                                                <td class="px-3 py-1.5 text-right font-mono font-bold ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${utils.formatNumber(net)}</td>
+                                                <td class="px-3 py-1.5 text-right font-mono ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${nMargin.toFixed(1)}%</td>
+                                                <td class="px-3 py-1.5 text-right font-mono text-indigo-600">${d.soldItemIds.size}</td>
+                                                <td class="px-3 py-1.5 text-right font-mono text-red-600">${deadStockCount}</td>
+                                                <td class="px-3 py-1.5 text-right font-mono text-gray-800">${utils.formatNumber(d.stockIn)}</td>
+                                                <td class="px-3 py-1.5 text-right font-mono text-gray-600">${utils.formatNumber(monthEndValues[m])}</td>
+                                                <td class="px-3 py-1.5 text-right font-mono text-red-700">${utils.formatNumber(d.outstanding)}</td>
+                                            </tr>
+                                        `;
+                                    }).join('');
+
+                                    const tRow = validMonthKeys.length > 0 ? `
+                                        <tr class="bg-gray-100 font-bold border-t-2 border-gray-200">
+                                            <td class="px-3 py-2 text-gray-800 text-center uppercase tracking-wider">Total</td>
+                                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tRev)}</td>
+                                            <td class="px-3 py-2 text-right font-mono text-emerald-700">${utils.formatNumber(tGP)}</td>
+                                            <td class="px-3 py-2 text-right"></td>
+                                            <td class="px-3 py-2 text-right font-mono text-orange-700">${utils.formatNumber(tExp)}</td>
+                                            <td class="px-3 py-2 text-right font-mono font-bold ${tNP >= 0 ? 'text-blue-700' : 'text-red-700'}">${utils.formatNumber(tNP)}</td>
+                                            <td class="px-3 py-2" colspan="6"></td>
                                         </tr>
-                                    `;
-                                }).join('')}
+                                    ` : '';
+
+                                    return rows + tRow;
+                                })()}
                             </tbody>
                         </table>
                     `;
