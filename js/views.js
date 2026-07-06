@@ -2274,13 +2274,8 @@ var views = window.views = {
                 await db.inventory.clear();
                 const items = await db.item_master.toArray();
                 
-                const activeStockIn = await db.stock_in.toArray();
-                const archiveStockIn = await db.stock_in_archive.toArray();
-                let allStockIn = [...activeStockIn, ...archiveStockIn];
-                
-                const activeSales = await db.sales.toArray();
-                const archiveSales = await db.sales_archive.toArray();
-                const allSales = [...activeSales, ...archiveSales];
+                const allStockIn = await db.stock_in.toArray();
+                const allSales = await db.sales.toArray();
                 const stockInMap = new Map();
                 allStockIn.forEach(s => {
                     if (!stockInMap.has(s.itemId)) stockInMap.set(s.itemId, []);
@@ -2538,6 +2533,56 @@ var views = window.views = {
                     await db.sales.bulkDelete(targetSales.map(s => s.id));
                 }
 
+                // --- 1.5 CALCULATE AND CREATE CARRY OVER ---
+                const carryOverMap = new Map();
+                for (const sin of targetStockIn) {
+                    const bId = sin.batchId || 'B001';
+                    const key = `${sin.itemId}_${bId}`;
+                    if (!carryOverMap.has(key)) {
+                        carryOverMap.set(key, {
+                            itemId: sin.itemId,
+                            batchId: bId,
+                            qty: 0,
+                            costPrice: sin.costPrice,
+                            mrp: sin.mrp,
+                            supplierId: sin.supplierId || ''
+                        });
+                    }
+                    const b = carryOverMap.get(key);
+                    b.qty += (parseFloat(sin.qty) || 0);
+                    b.costPrice = sin.costPrice || b.costPrice; 
+                    b.mrp = sin.mrp || b.mrp;
+                }
+                for (const sale of targetSales) {
+                    if (sale.paymentStatus === 'Cancelled') continue;
+                    const bId = sale.batchId || 'B001';
+                    const key = `${sale.itemId}_${bId}`;
+                    if (carryOverMap.has(key)) {
+                        carryOverMap.get(key).qty -= (parseFloat(sale.qty) || 0);
+                    }
+                }
+                
+                const carryOverRecords = [];
+                const nextYearDate = `${year + 1}-01-01T00:00:00`;
+                for (const b of carryOverMap.values()) {
+                    if (b.qty > 0) {
+                        carryOverRecords.push({
+                            itemId: b.itemId,
+                            batchId: b.batchId,
+                            qty: b.qty,
+                            costPrice: b.costPrice,
+                            mrp: b.mrp,
+                            supplierId: b.supplierId,
+                            date: nextYearDate,
+                            notes: `Balance carry-over from ${year}`,
+                            total: b.qty * b.costPrice
+                        });
+                    }
+                }
+                if (carryOverRecords.length > 0) {
+                    await db.stock_in.bulkAdd(carryOverRecords);
+                }
+
                 // --- 2. ARCHIVE STOCK IN ---
 
                 // Move original Stock In to Archive
@@ -2586,6 +2631,92 @@ var views = window.views = {
         } catch (err) {
             console.error('Annual closing error:', err);
             utils.showNotification('Error during annual closing: ' + err.message, 'error');
+        }
+    },
+
+    repairMissingCarryOvers: async () => {
+        if (!app.isAdmin) {
+            app.requestAuth(() => views.repairMissingCarryOvers());
+            return;
+        }
+
+        if (!confirm(`⚠️ REPAIR ARCHIVE BALANCES\n\nThis will scan your system archives and generate missing Balance Carry-Over records for active inventory. Use this if your stock is incorrect after a recent update.\n\nContinue?`)) return;
+
+        try {
+            utils.showNotification('Repairing missing carry-overs... Please wait.', 'info');
+            
+            await db.transaction('rw', db.sales_archive, db.stock_in_archive, db.stock_in, async () => {
+                const archiveYears = await db.stock_in_archive.orderBy('archiveYear').uniqueKeys();
+                
+                for (const year of archiveYears) {
+                    const targetStockIn = await db.stock_in_archive.where('archiveYear').equals(year).toArray();
+                    const targetSales = await db.sales_archive.where('archiveYear').equals(year).toArray();
+                    
+                    const carryOverMap = new Map();
+                    for (const sin of targetStockIn) {
+                        const bId = sin.batchId || 'B001';
+                        const key = `${sin.itemId}_${bId}`;
+                        if (!carryOverMap.has(key)) {
+                            carryOverMap.set(key, {
+                                itemId: sin.itemId,
+                                batchId: bId,
+                                qty: 0,
+                                costPrice: sin.costPrice,
+                                mrp: sin.mrp,
+                                supplierId: sin.supplierId || ''
+                            });
+                        }
+                        const b = carryOverMap.get(key);
+                        b.qty += (parseFloat(sin.qty) || 0);
+                        b.costPrice = sin.costPrice || b.costPrice;
+                        b.mrp = sin.mrp || b.mrp;
+                    }
+                    for (const sale of targetSales) {
+                        if (sale.paymentStatus === 'Cancelled') continue;
+                        const bId = sale.batchId || 'B001';
+                        const key = `${sale.itemId}_${bId}`;
+                        if (carryOverMap.has(key)) {
+                            carryOverMap.get(key).qty -= (parseFloat(sale.qty) || 0);
+                        }
+                    }
+                    
+                    const carryOverRecords = [];
+                    const nextYearDate = `${year + 1}-01-01T00:00:00`;
+                    
+                    // Check if carry overs already exist for this year
+                    const existingCarryOvers = await db.stock_in.where('date').equals(nextYearDate).toArray();
+                    const existingKeys = new Set(existingCarryOvers.filter(s => s.notes && s.notes.includes('carry-over')).map(s => `${s.itemId}_${s.batchId || 'B001'}`));
+
+                    for (const b of carryOverMap.values()) {
+                        const key = `${b.itemId}_${b.batchId}`;
+                        if (b.qty > 0 && !existingKeys.has(key)) {
+                            carryOverRecords.push({
+                                itemId: b.itemId,
+                                batchId: b.batchId,
+                                qty: b.qty,
+                                costPrice: b.costPrice,
+                                mrp: b.mrp,
+                                supplierId: b.supplierId,
+                                date: nextYearDate,
+                                notes: `Balance carry-over from ${year}`,
+                                total: b.qty * b.costPrice
+                            });
+                        }
+                    }
+                    
+                    if (carryOverRecords.length > 0) {
+                        await db.stock_in.bulkAdd(carryOverRecords);
+                    }
+                }
+            });
+            
+            utils.showNotification('Repair Complete! Recalculating inventory...', 'success');
+            await views.recalculateAllInventory(true);
+            setTimeout(() => window.location.reload(), 2000);
+            
+        } catch (err) {
+            console.error('Repair error:', err);
+            utils.showNotification('Error during repair: ' + err.message, 'error');
         }
     },
 
