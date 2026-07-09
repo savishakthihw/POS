@@ -813,6 +813,7 @@ var views = window.views = {
 
     // --- STOCK IN SECTION ---
     initStockIn: async (prefilledItemId = null) => {
+        const currentMonth = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
         const container = document.getElementById('view-stockin');
         if (!app.itemCache || app.itemCache.length === 0) {
             app.itemCache = await db.item_master.toArray();
@@ -993,7 +994,8 @@ var views = window.views = {
                                 <div class="relative">
                                     <i class="fa-solid fa-calendar-days absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
                                     <input type="month" id="stockin-search-month" 
-                                        class="pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 shadow-sm">
+                                        class="pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 shadow-sm"
+                                        value="${currentMonth}">
                                 </div>
                                 <button onclick="const m = document.getElementById('stockin-search-month').value; const d = document.getElementById('stockin-search-date').value; const i = document.getElementById('stockin-search-id').value; views.loadRecentStockIn(i, d, m);" class="bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1 shadow-sm">
                                     <i class="fa-solid fa-search"></i>
@@ -1223,7 +1225,7 @@ var views = window.views = {
             }
         }
 
-        views.loadRecentStockIn();
+        views.loadRecentStockIn('', '', currentMonth);
 
         if (prefilledItemId) {
             const item = items.find(i => i.itemId == prefilledItemId);
@@ -1672,6 +1674,15 @@ var views = window.views = {
             recents = allRecents;
             if (countLabel) countLabel.innerText = `${recents.length} Results found`;
         }
+
+        // Fill in missing item names
+        for (let i = 0; i < recents.length; i++) {
+            if (!recents[i].itemName || recents[i].itemName.trim() === '') {
+                const master = await db.item_master.get(recents[i].itemId);
+                recents[i].itemName = master ? master.itemName : 'Unknown Item';
+            }
+        }
+
         document.getElementById('stockin-recent-body').innerHTML = recents.map(r => `
             <tr class="hover:bg-gray-50/80 transition-colors group">
                 <td class="px-6 py-4">
@@ -7080,6 +7091,7 @@ var views = window.views = {
 
     // --- EXPENSES SECTION ---
     initExpenses: async () => {
+        const currentMonth = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
         const container = document.getElementById('view-expenses');
         container.innerHTML = `
             <div class="flex flex-col h-full gap-6">
@@ -7093,6 +7105,7 @@ var views = window.views = {
                             <i class="fa-solid fa-calendar-days absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
                             <input type="month" id="expenses-search-month" 
                              class="pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                             value="${currentMonth}"
                              onchange="views.loadExpensesTable(this.value)">
                         </div>
                         <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.exportToPDF('expenses-table', 'Expenses Report')); } else { views.exportToPDF('expenses-table', 'Expenses Report'); }" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition-all flex items-center gap-2">
@@ -7126,7 +7139,7 @@ var views = window.views = {
             </div>
         `;
 
-        views.loadExpensesTable();
+        views.loadExpensesTable(currentMonth);
 
         const form = document.getElementById('add-expense-form');
         if (form) form.onsubmit = views.saveExpense;
@@ -7268,6 +7281,7 @@ var views = window.views = {
 
     // --- PURCHASES SECTION ---
     initPurchases: async () => {
+        const currentMonth = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
         const container = document.getElementById('view-purchases');
         container.innerHTML = `
             <div class="flex flex-col h-full gap-6">
@@ -7281,6 +7295,7 @@ var views = window.views = {
                             <i class="fa-solid fa-calendar-days absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
                             <input type="month" id="purchases-search-month" 
                              class="pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                             value="${currentMonth}"
                              onchange="views.loadPurchasesTable(this.value, document.getElementById('purchases-search-sup-id')?.value)">
                         </div>
                         <div class="relative">
@@ -7322,7 +7337,7 @@ var views = window.views = {
             </div>
         `;
 
-        views.loadPurchasesTable();
+        views.loadPurchasesTable(currentMonth);
 
         const form = document.getElementById('add-purchase-form');
         if (form) form.onsubmit = views.savePurchase;

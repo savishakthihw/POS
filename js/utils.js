@@ -24,10 +24,14 @@ const utils = {
 
     formatDate: (dateString) => {
         if (!dateString) return '';
-        // If it's a standard YYYY-MM-DD string, parse manually to avoid timezone shifts
-        if (typeof dateString === 'string' && dateString.includes('-') && dateString.split('-').length === 3) {
-            const [y, m, d] = dateString.split('-');
-            return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+        if (typeof dateString === 'string') {
+            const datePart = dateString.split('T')[0];
+            if (datePart.includes('-') && datePart.split('-').length === 3) {
+                const [y, m, d] = datePart.split('-');
+                if (y.length === 4) {
+                    return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+                }
+            }
         }
         const date = new Date(dateString);
         if (isNaN(date.getTime())) return dateString; // Return as is if invalid
@@ -81,11 +85,10 @@ const utils = {
         return `${prefix}-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 100)}`;
     },
 
-    // Clean item name by removing leading digits and batch suffixes
+    // Clean item name by removing batch suffixes
     cleanItemName: (name) => {
         if (!name) return '';
         return String(name)
-            .replace(/^\d+\s*/, '')      // Remove leading digits (older format)
             .split(' [Batch:')[0]         // Remove batch suffix
             .trim();
     },
