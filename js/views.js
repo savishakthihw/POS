@@ -189,9 +189,9 @@ var views = window.views = {
                     itemName: document.getElementById('item-name').value,
                     supplierId: document.getElementById('item-supplier').value,
                     unit: document.getElementById('item-unit').value,
-                    // Capture cost and MRP for both new items and edits
-                    costPrice: parseFloat(document.getElementById('item-cost').value) || 0,
-                    listPrice: parseFloat(document.getElementById('item-mrp').value) || 0,
+                    // Cost and MRP are managed via Stock In entries now
+                    costPrice: 0,
+                    listPrice: 0,
                     reorderLevel: parseFloat(document.getElementById('item-reorder').value) || 0,
                     remarks: document.getElementById('item-remarks').value.trim(),
                     useBatch: true,
@@ -215,6 +215,13 @@ var views = window.views = {
                                 itemData.itemId = Number(rawId);
                             }
 
+                            // Fetch existing item to retain prices
+                            const existingItem = await db.item_master.get(itemData.itemId);
+                            if (existingItem) {
+                                itemData.costPrice = existingItem.costPrice || 0;
+                                itemData.listPrice = existingItem.listPrice || 0;
+                            }
+
                             await db.item_master.put(itemData);
 
                             const inventoryKeys = [itemData.itemId];
@@ -224,21 +231,15 @@ var views = window.views = {
                                 inventoryKeys.push(Number(itemData.itemId));
                             }
 
-                            // Update active batches so the new selling price is applied immediately to POS
-                            await db.item_batches.where('itemId').anyOf(inventoryKeys).modify(b => {
-                                if (!b.isDiscontinued) {
-                                    b.costPrice = itemData.costPrice;
-                                    b.listPrice = itemData.listPrice;
-                                }
-                            });
+                            // We no longer update batch prices on edit, since prices are only set via stock in
+
 
                             // Sync with inventory
                             await db.inventory.where('itemId').anyOf(inventoryKeys).modify(inv => {
                                 inv.itemName = itemData.itemName;
                                 inv.reorderLevel = itemData.reorderLevel;
                                 inv.supplierId = itemData.supplierId; 
-                                inv.avgCost = itemData.costPrice; // Explicitly update avgCost on edit
-                                inv.stockValue = (inv.currentStock || 0) * itemData.costPrice;
+                                // Do not update avgCost or stockValue on basic edit
                             });
 
                             await utils.logAction('Item Edit', `Updated ${itemData.itemName} (${itemData.itemId})`);
@@ -420,7 +421,7 @@ var views = window.views = {
                         <div class="text-[10.5px] text-indigo-600 font-medium max-w-[120px] truncate leading-tight" title="${item.remarks || ''}">${item.remarks || '<span class="text-gray-200">-</span>'}</div>
                     </td>
                     <td class="px-3 py-3 text-right space-x-1 whitespace-nowrap">
-                        <!-- Main Item Edit Disabled: Edit via batches only -->
+                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.editItem('${item.itemId}')); } else { views.editItem('${item.itemId}'); }" class="text-blue-500 hover:text-blue-700 ${app.isAdmin ? '' : 'hidden'}" title="Edit Item"><i class="fa-solid fa-pen p-1 bg-blue-50 rounded"></i></button>
 
                         <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.deleteItem('${item.itemId}')); } else { views.deleteItem('${item.itemId}'); }" class="text-red-500 hover:text-red-700 ${app.isAdmin ? '' : 'hidden'}" title="Delete Item"><i class="fa-solid fa-trash p-1 bg-red-50 rounded"></i></button>
                     </td>
@@ -487,9 +488,7 @@ var views = window.views = {
             content.innerHTML = `
                 <div class="flex items-center justify-between mb-2">
                     <h5 class="text-[10px] font-black uppercase tracking-widest text-amber-600">Active Stock Batches</h5>
-                    <div class="flex items-center gap-3">
                         <span class="text-[9px] font-bold text-gray-400">ITEM ID: ${itemId}</span>
-                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.showAddBatchModal('${itemId}')); } else { views.showAddBatchModal('${itemId}'); }" class="bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded text-[9px] font-bold shadow-sm transition-colors uppercase tracking-wider"><i class="fa-solid fa-plus mr-1"></i>New Batch</button>
                     </div>
                 </div>
                 <div class="overflow-hidden border border-amber-100 rounded-lg bg-white shadow-sm">
@@ -503,7 +502,6 @@ var views = window.views = {
                                 <th class="px-3 py-1.5 text-right">Selling Price (MRP)</th>
                                 <th class="px-3 py-1.5 text-right">Stock Value</th>
                                 <th class="px-3 py-1.5 text-center">Status</th>
-                                <th class="px-3 py-1.5 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-50">
@@ -525,11 +523,6 @@ var views = window.views = {
                                             <option value="active" ${!b.isDiscontinued ? 'selected' : ''}>Active</option>
                                             <option value="discontinued" ${b.isDiscontinued ? 'selected' : ''}>Discontinue</option>
                                         </select>
-                                    </td>
-                                    <td class="px-3 py-2 text-center">
-                                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.showEditBatchModal('${b.batchId}', '${itemId}', ${b.costPrice || 0}, ${b.listPrice || 0})); } else { views.showEditBatchModal('${b.batchId}', '${itemId}', ${b.costPrice || 0}, ${b.listPrice || 0}); }" class="bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white px-2 py-1 rounded text-xs transition-colors shadow-sm" title="Edit Prices">
-                                            <i class="fa-solid fa-pen-to-square"></i>
-                                        </button>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -744,8 +737,6 @@ var views = window.views = {
             document.getElementById('item-name').value = item.itemName;
             document.getElementById('item-supplier').value = item.supplierId || '';
             document.getElementById('item-unit').value = item.unit || 'Pcs';
-            document.getElementById('item-cost').value = item.costPrice || 0;
-            document.getElementById('item-mrp').value = item.listPrice || 0;
             document.getElementById('item-reorder').value = item.reorderLevel || 5;
             document.getElementById('item-remarks').value = item.remarks || '';
             if (document.getElementById('item-batch-id')) document.getElementById('item-batch-id').value = item.batchId || 'B001';
@@ -772,6 +763,14 @@ var views = window.views = {
         }
         if (confirm('Are you sure you want to delete this item? This will also delete inventory records.')) {
             if (!utils.verifyDeletePassword()) return;
+            
+            // Check for existing stock history
+            const inv = await db.inventory.get(itemId);
+            if (inv && (inv.stockIn > 0 || inv.currentStock > 0)) {
+                utils.showNotification('Cannot delete: Stock In and Current Stock must be zero. If there is old Stock Management history, this item cannot be deleted.', 'error');
+                return;
+            }
+
             try {
                 await db.transaction('rw', db.item_master, db.inventory, db.audit_logs, async () => {
                     const item = await db.item_master.get(itemId);
@@ -1029,14 +1028,12 @@ var views = window.views = {
                                             </div>
                                         </div>
                                         <div class="space-y-2" id="batch-id-container" style="display:none;">
-                                            <label class="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Batch ID</label>
+                                            <label class="text-[10px] font-black text-amber-500 uppercase tracking-widest ml-1">Batch ID</label>
                                             <div class="relative">
-                                                <i class="fa-solid fa-layer-group absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400"></i>
-                                                <select id="stock-batch-id"
-                                                    class="w-full bg-indigo-50/30 border-2 border-indigo-100/50 rounded-2xl pl-12 pr-10 py-3.5 text-xs focus:bg-white focus:border-indigo-400/50 transition-all outline-none font-black text-indigo-700 cursor-pointer appearance-none">
-                                                    <option value="" disabled selected>Select a Batch</option>
-                                                </select>
-                                                <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none text-[10px]"></i>
+                                                <i class="fa-solid fa-layer-group absolute left-4 top-1/2 -translate-y-1/2 text-amber-500"></i>
+                                                <input type="text" id="stock-batch-id"
+                                                    class="w-full bg-amber-50/30 border-2 border-amber-200/50 rounded-2xl pl-12 pr-4 py-3.5 text-xs focus:bg-white focus:border-amber-400/50 transition-all outline-none font-black text-amber-700" 
+                                                    placeholder="B001" required>
                                             </div>
                                         </div>
                                     </div>
@@ -1065,22 +1062,22 @@ var views = window.views = {
                                     </div>
 
                                     <div class="space-y-2">
-                                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Unit Cost (Buy) - <span class="text-indigo-400 font-bold text-[8px] bg-indigo-50 px-1 rounded">LOCKED TO BATCH</span></label>
+                                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Unit Cost (Buy)</label>
                                         <div class="relative">
                                              <div class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">Rs.</div>
                                              <input type="number" step="0.01" id="stock-cost" 
-                                                class="w-full bg-gray-100 border-2 border-transparent rounded-2xl pl-12 pr-4 py-4 text-lg outline-none font-black text-gray-500 transition-all cursor-not-allowed opacity-80" 
-                                                value="0.00" readonly title="Cost is managed via Item Batches">
+                                                class="w-full bg-white border-2 border-gray-200 rounded-2xl pl-12 pr-4 py-4 text-lg outline-none font-black text-gray-800 transition-all focus:border-emerald-500" 
+                                                value="0.00" required>
                                         </div>
                                     </div>
 
                                     <div class="space-y-2">
-                                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Selling Price (MRP) - <span class="text-indigo-400 font-bold text-[8px] bg-indigo-50 px-1 rounded">LOCKED TO BATCH</span></label>
+                                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Selling Price (MRP)</label>
                                         <div class="relative">
                                              <div class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">Rs.</div>
                                              <input type="number" step="0.01" id="stock-mrp" 
-                                                class="w-full bg-gray-100 border-2 border-transparent rounded-2xl pl-12 pr-4 py-4 text-lg outline-none font-black text-gray-500 transition-all cursor-not-allowed opacity-80" 
-                                                value="0.00" readonly title="MRP is managed via Item Batches">
+                                                class="w-full bg-white border-2 border-gray-200 rounded-2xl pl-12 pr-4 py-4 text-lg outline-none font-black text-gray-800 transition-all focus:border-emerald-500" 
+                                                value="0.00" required>
                                         </div>
                                     </div>
                                 </div>
@@ -1205,7 +1202,10 @@ var views = window.views = {
         const itemInput = document.getElementById('stock-item-input');
         const qtyInput = document.getElementById('stock-qty');
         // dateInput already declared above
-
+        
+        let currentItemOriginalCost = 0;
+        let currentItemOriginalMRP = 0;
+        let currentItemOriginalBatch = '';
 
         // Make date picker open more easily
         dateInput.addEventListener('click', () => {
@@ -1230,42 +1230,22 @@ var views = window.views = {
                 document.getElementById('view-supplier-id').value = item.supplierId || 'MANUAL';
                 document.getElementById('stock-unit-label').innerText = item.unit;
 
-                // Populate Batch ID Dropdown
+                // Show batch input and populate default values
                 const batchContainer = document.getElementById('batch-id-container');
                 if (batchContainer) {
                     batchContainer.style.display = 'block';
-                    const batchSelect = document.getElementById('stock-batch-id');
-                    if (batchSelect) {
-                        batchSelect.required = true;
-                        
-                        // Fetch batches for this item
-                        db.item_batches.where('itemId').equals(item.itemId).toArray().then(batches => {
-                            const activeBatches = batches.filter(b => !b.isDiscontinued);
-                            
-                            if (activeBatches.length > 0) {
-                                batchSelect.innerHTML = activeBatches.map(b => 
-                                    `<option value="${b.batchId}" data-cost="${b.costPrice || 0}" data-mrp="${b.listPrice || 0}">${b.batchId} (Stock: ${b.currentStock || 0})</option>`
-                                ).join('');
-                            } else {
-                                batchSelect.innerHTML = `<option value="B001" data-cost="${item.costPrice || 0}" data-mrp="${item.listPrice || 0}">B001 (Auto/New)</option>`;
-                            }
-                            
-                            // Trigger initial population of prices
-                            const triggerChange = new Event('change');
-                            batchSelect.dispatchEvent(triggerChange);
-                        });
-
-                        // Handle batch selection changes to update locked prices
-                        batchSelect.onchange = (e) => {
-                            const selectedOption = e.target.options[e.target.selectedIndex];
-                            if (selectedOption) {
-                                document.getElementById('stock-cost').value = selectedOption.getAttribute('data-cost') || 0;
-                                document.getElementById('stock-mrp').value = selectedOption.getAttribute('data-mrp') || 0;
-                                updateTotal();
-                            }
-                        };
+                    const batchInput = document.getElementById('stock-batch-id');
+                    if (batchInput) {
+                        batchInput.required = true;
+                        batchInput.value = item.batchId || 'B001';
                     }
                 }
+                currentItemOriginalCost = item.costPrice || 0;
+                currentItemOriginalMRP = item.listPrice || 0;
+                currentItemOriginalBatch = item.batchId || 'B001';
+
+                document.getElementById('stock-cost').value = currentItemOriginalCost;
+                document.getElementById('stock-mrp').value = currentItemOriginalMRP;
 
                 updateTotal();
                 qtyInput.focus();
@@ -1278,8 +1258,43 @@ var views = window.views = {
             document.getElementById('stock-total').value = (qty * cost).toFixed(2);
         };
 
+        const handlePriceChange = async () => {
+            const itemId = document.getElementById('stock-item-id').value;
+            if (!itemId) return;
+            const currentCost = parseFloat(document.getElementById('stock-cost').value) || 0;
+            const currentMrp = parseFloat(document.getElementById('stock-mrp').value) || 0;
+            const batchInput = document.getElementById('stock-batch-id');
+            
+            if (currentCost !== currentItemOriginalCost || currentMrp !== currentItemOriginalMRP) {
+                // Find next batch ID
+                const batches = await db.item_batches.where('itemId').equals(itemId).toArray();
+                let maxB = 0;
+                batches.forEach(b => {
+                    const match = String(b.batchId).match(/^B(\d+)$/i);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > maxB) maxB = num;
+                    }
+                });
+                const nextB = maxB > 0 ? `B${String(maxB + 1).padStart(3, '0')}` : 'B002';
+                // Update batch if it's still the original one
+                if (batchInput.value === currentItemOriginalBatch) {
+                    batchInput.value = nextB;
+                }
+            } else {
+                // Revert if price is reverted and batch looks auto-generated
+                const match = String(batchInput.value).match(/^B(\d+)$/i);
+                if (match && batchInput.value !== currentItemOriginalBatch) {
+                    batchInput.value = currentItemOriginalBatch;
+                }
+            }
+        };
+
         document.getElementById('stock-qty').addEventListener('input', updateTotal);
         document.getElementById('stock-cost').addEventListener('input', updateTotal);
+        document.getElementById('stock-cost').addEventListener('change', handlePriceChange);
+        
+        document.getElementById('stock-mrp').addEventListener('change', handlePriceChange);
 
         document.getElementById('stockin-form').onsubmit = async (e) => {
             e.preventDefault();
@@ -3691,6 +3706,27 @@ var views = window.views = {
                 window.pendingQuotationCustomer = null;
             }
             views.renderCart();
+        }
+
+        // --- BARCODE SCANNER AUTO-FOCUS ---
+        // 1. Focus immediately when POS loads (handles navigation back to POS)
+        setTimeout(() => { searchInput.focus(); }, 100);
+
+        // 2. Re-focus whenever user clicks anywhere in the POS view that isn't a button/input/select
+        const posView = document.getElementById('view-pos');
+        if (posView) {
+            // Remove old listener if any, then re-add fresh
+            if (window._posClickFocusHandler) {
+                posView.removeEventListener('click', window._posClickFocusHandler);
+            }
+            window._posClickFocusHandler = (e) => {
+                const tag = e.target.tagName;
+                const isInteractive = ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'LABEL', 'A'].includes(tag);
+                if (!isInteractive) {
+                    searchInput.focus();
+                }
+            };
+            posView.addEventListener('click', window._posClickFocusHandler);
         }
     },
 
