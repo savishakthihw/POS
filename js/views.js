@@ -189,9 +189,9 @@ var views = window.views = {
                     itemName: document.getElementById('item-name').value,
                     supplierId: document.getElementById('item-supplier').value,
                     unit: document.getElementById('item-unit').value,
-                    // Cost and MRP are now strictly read-only and updated via Stock In only
-                    costPrice: editMode ? (parseFloat(document.getElementById('item-cost').value) || 0) : 0,
-                    listPrice: editMode ? (parseFloat(document.getElementById('item-mrp').value) || 0) : 0,
+                    // Capture cost and MRP for both new items and edits
+                    costPrice: parseFloat(document.getElementById('item-cost').value) || 0,
+                    listPrice: parseFloat(document.getElementById('item-mrp').value) || 0,
                     reorderLevel: parseFloat(document.getElementById('item-reorder').value) || 0,
                     remarks: document.getElementById('item-remarks').value.trim(),
                     useBatch: true,
@@ -217,7 +217,6 @@ var views = window.views = {
 
                             await db.item_master.put(itemData);
 
-                            // Sync with inventory (But NOT batch prices - Batch prices should stay locked to their specific records)
                             const inventoryKeys = [itemData.itemId];
                             if (typeof itemData.itemId === 'number') {
                                 inventoryKeys.push(String(itemData.itemId));
@@ -225,13 +224,21 @@ var views = window.views = {
                                 inventoryKeys.push(Number(itemData.itemId));
                             }
 
+                            // Update active batches so the new selling price is applied immediately to POS
+                            await db.item_batches.where('itemId').anyOf(inventoryKeys).modify(b => {
+                                if (!b.isDiscontinued) {
+                                    b.costPrice = itemData.costPrice;
+                                    b.listPrice = itemData.listPrice;
+                                }
+                            });
+
+                            // Sync with inventory
                             await db.inventory.where('itemId').anyOf(inventoryKeys).modify(inv => {
                                 inv.itemName = itemData.itemName;
                                 inv.reorderLevel = itemData.reorderLevel;
-                                inv.supplierId = itemData.supplierId; // Fixed: Sync supplier ID on edit
-                                // For edits, we don't change avgCost unless explicitly requested, but we update stockValue
-                                const cost = inv.avgCost || itemData.costPrice;
-                                inv.stockValue = (inv.currentStock || 0) * cost;
+                                inv.supplierId = itemData.supplierId; 
+                                inv.avgCost = itemData.costPrice; // Explicitly update avgCost on edit
+                                inv.stockValue = (inv.currentStock || 0) * itemData.costPrice;
                             });
 
                             await utils.logAction('Item Edit', `Updated ${itemData.itemName} (${itemData.itemId})`);
@@ -256,6 +263,17 @@ var views = window.views = {
                                 reorderLevel: itemData.reorderLevel,
                                 avgCost: itemData.costPrice,
                                 stockValue: 0
+                            });
+
+                            // Create initial batch for new item
+                            await db.item_batches.add({
+                                itemId: itemData.itemId,
+                                batchId: itemData.batchId,
+                                initialStock: 0,
+                                currentStock: 0,
+                                costPrice: itemData.costPrice,
+                                listPrice: itemData.listPrice,
+                                isDiscontinued: false
                             });
 
                             await utils.logAction('Item Create', `Created ${itemData.itemName} (${itemData.itemId})`);
@@ -402,7 +420,7 @@ var views = window.views = {
                         <div class="text-[10.5px] text-indigo-600 font-medium max-w-[120px] truncate leading-tight" title="${item.remarks || ''}">${item.remarks || '<span class="text-gray-200">-</span>'}</div>
                     </td>
                     <td class="px-3 py-3 text-right space-x-1 whitespace-nowrap">
-                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.editItem('${item.itemId}')); } else { views.editItem('${item.itemId}'); }" class="text-blue-600 hover:text-blue-900 ${app.isAdmin ? '' : 'hidden'}" title="Edit Item"><i class="fa-solid fa-pen-to-square p-1 bg-blue-50 rounded"></i></button>
+                        <!-- Main Item Edit Disabled: Edit via batches only -->
 
                         <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.deleteItem('${item.itemId}')); } else { views.deleteItem('${item.itemId}'); }" class="text-red-500 hover:text-red-700 ${app.isAdmin ? '' : 'hidden'}" title="Delete Item"><i class="fa-solid fa-trash p-1 bg-red-50 rounded"></i></button>
                     </td>
@@ -469,7 +487,10 @@ var views = window.views = {
             content.innerHTML = `
                 <div class="flex items-center justify-between mb-2">
                     <h5 class="text-[10px] font-black uppercase tracking-widest text-amber-600">Active Stock Batches</h5>
-                    <span class="text-[9px] font-bold text-gray-400">ITEM ID: ${itemId}</span>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[9px] font-bold text-gray-400">ITEM ID: ${itemId}</span>
+                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.showAddBatchModal('${itemId}')); } else { views.showAddBatchModal('${itemId}'); }" class="bg-amber-500 hover:bg-amber-600 text-white px-2 py-1 rounded text-[9px] font-bold shadow-sm transition-colors uppercase tracking-wider"><i class="fa-solid fa-plus mr-1"></i>New Batch</button>
+                    </div>
                 </div>
                 <div class="overflow-hidden border border-amber-100 rounded-lg bg-white shadow-sm">
                     <table class="w-full text-[10px] text-left">
@@ -482,6 +503,7 @@ var views = window.views = {
                                 <th class="px-3 py-1.5 text-right">Selling Price (MRP)</th>
                                 <th class="px-3 py-1.5 text-right">Stock Value</th>
                                 <th class="px-3 py-1.5 text-center">Status</th>
+                                <th class="px-3 py-1.5 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-50">
@@ -503,6 +525,11 @@ var views = window.views = {
                                             <option value="active" ${!b.isDiscontinued ? 'selected' : ''}>Active</option>
                                             <option value="discontinued" ${b.isDiscontinued ? 'selected' : ''}>Discontinue</option>
                                         </select>
+                                    </td>
+                                    <td class="px-3 py-2 text-center">
+                                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.showEditBatchModal('${b.batchId}', '${itemId}', ${b.costPrice || 0}, ${b.listPrice || 0})); } else { views.showEditBatchModal('${b.batchId}', '${itemId}', ${b.costPrice || 0}, ${b.listPrice || 0}); }" class="bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white px-2 py-1 rounded text-xs transition-colors shadow-sm" title="Edit Prices">
+                                            <i class="fa-solid fa-pen-to-square"></i>
+                                        </button>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -540,6 +567,126 @@ var views = window.views = {
                     views.toggleItemBatches(itemId, btn); // Re-open (this will fetch and render new data)
                 }
             }
+        }
+    },
+
+    showAddBatchModal: (itemId) => {
+        document.getElementById('add-batch-item-id').value = itemId;
+        document.getElementById('add-batch-id').value = '';
+        document.getElementById('add-batch-cost').value = '';
+        document.getElementById('add-batch-mrp').value = '';
+        
+        const modal = document.getElementById('add-batch-modal');
+        modal.classList.remove('hidden');
+        
+        document.getElementById('add-batch-form').onsubmit = async (e) => {
+            e.preventDefault();
+            await views.saveNewBatch();
+        };
+    },
+
+    saveNewBatch: async () => {
+        const itemId = document.getElementById('add-batch-item-id').value;
+        const batchId = document.getElementById('add-batch-id').value.trim().toUpperCase();
+        const costPrice = parseFloat(document.getElementById('add-batch-cost').value) || 0;
+        const listPrice = parseFloat(document.getElementById('add-batch-mrp').value) || 0;
+
+        if (!batchId) {
+            utils.showNotification('Batch ID is required', 'error');
+            return;
+        }
+
+        try {
+            // Check if batch already exists for this item
+            const existing = await db.item_batches.where({ itemId, batchId }).first();
+            if (existing) {
+                utils.showNotification('This Batch ID already exists for this item!', 'error');
+                return;
+            }
+
+            // Create new batch with 0 stock
+            await db.item_batches.add({
+                itemId,
+                batchId,
+                initialStock: 0,
+                currentStock: 0,
+                costPrice,
+                listPrice,
+                isDiscontinued: false
+            });
+
+            utils.showNotification('New Batch Added Successfully!', 'success');
+            document.getElementById('add-batch-modal').classList.add('hidden');
+            
+            // Refresh batch view
+            const btn = document.querySelector(`button[onclick*="toggleItemBatches('${itemId}'"]`);
+            if (btn) {
+                const safeId = itemId.replace(/[^a-zA-Z0-9]/g, '_');
+                const row = document.getElementById(`item-batches-row-${safeId}`);
+                if (row) {
+                    row.classList.add('hidden');
+                    views.toggleItemBatches(itemId, btn);
+                }
+            }
+        } catch (err) {
+            console.error('Error saving batch:', err);
+            utils.showNotification('Failed to add batch', 'error');
+        }
+    },
+
+    showEditBatchModal: (batchId, itemId, currentCost, currentMrp) => {
+        document.getElementById('edit-batch-item-id').value = itemId;
+        document.getElementById('edit-batch-original-id').value = batchId;
+        document.getElementById('edit-batch-id').value = batchId;
+        document.getElementById('edit-batch-cost').value = currentCost;
+        document.getElementById('edit-batch-mrp').value = currentMrp;
+        
+        const modal = document.getElementById('edit-batch-modal');
+        modal.classList.remove('hidden');
+        
+        document.getElementById('edit-batch-form').onsubmit = async (e) => {
+            e.preventDefault();
+            await views.saveBatchEdit();
+        };
+    },
+
+    saveBatchEdit: async () => {
+        const itemId = document.getElementById('edit-batch-item-id').value;
+        const batchId = document.getElementById('edit-batch-original-id').value;
+        const costPrice = parseFloat(document.getElementById('edit-batch-cost').value) || 0;
+        const listPrice = parseFloat(document.getElementById('edit-batch-mrp').value) || 0;
+
+        try {
+            const batch = await db.item_batches.where({ itemId, batchId }).first();
+            if (!batch) {
+                utils.showNotification('Batch not found', 'error');
+                return;
+            }
+
+            await db.item_batches.update(batch.id, {
+                costPrice,
+                listPrice
+            });
+            
+            // Re-sync master price in case this was the active/latest batch
+            await views.syncSingleItemMaster(itemId);
+
+            utils.showNotification('Batch Prices Updated!', 'success');
+            document.getElementById('edit-batch-modal').classList.add('hidden');
+            
+            // Refresh batch view
+            const btn = document.querySelector(`button[onclick*="toggleItemBatches('${itemId}'"]`);
+            if (btn) {
+                const safeId = itemId.replace(/[^a-zA-Z0-9]/g, '_');
+                const row = document.getElementById(`item-batches-row-${safeId}`);
+                if (row) {
+                    row.classList.add('hidden');
+                    views.toggleItemBatches(itemId, btn);
+                }
+            }
+        } catch (err) {
+            console.error('Error updating batch:', err);
+            utils.showNotification('Failed to update batch prices', 'error');
         }
     },
 
@@ -831,14 +978,9 @@ var views = window.views = {
                         <h3 class="text-xl font-bold text-emerald-600">Stock Management</h3>
                         <p class="text-xs text-gray-400">Add and track incoming inventory</p>
                     </div>
-                    <div class="flex gap-3 ${app.isAdmin ? '' : 'hidden'}">
-                         <button onclick="views.handleSyncClick()" class="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl hover:bg-indigo-100 transition-all text-sm font-semibold border border-indigo-100">
-                            <i class="fa-solid fa-rotate"></i> Sync Integrity
-                        </button>
                          <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.exportStockInToCSV()); } else { views.exportStockInToCSV(); }" class="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl hover:bg-blue-100 transition-all text-sm font-semibold border border-blue-100">
                             <i class="fa-solid fa-file-export"></i> Export
                         </button>
-                    </div>
                 </div>
 
                 <!-- Scrollable Body -->
@@ -886,13 +1028,15 @@ var views = window.views = {
                                                     placeholder="-" readonly>
                                             </div>
                                         </div>
-                                        <div class="space-y-2" id="batch-id-container">
+                                        <div class="space-y-2" id="batch-id-container" style="display:none;">
                                             <label class="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Batch ID</label>
                                             <div class="relative">
-                                                <i class="fa-solid fa-tags absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400"></i>
-                                                <input type="text" id="stock-batch-id"
-                                                    class="w-full bg-indigo-50/30 border-2 border-indigo-100/50 rounded-2xl pl-12 pr-4 py-3.5 text-xs focus:bg-white focus:border-indigo-400/50 transition-all outline-none font-black text-indigo-700" 
-                                                    placeholder="B001">
+                                                <i class="fa-solid fa-layer-group absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400"></i>
+                                                <select id="stock-batch-id"
+                                                    class="w-full bg-indigo-50/30 border-2 border-indigo-100/50 rounded-2xl pl-12 pr-10 py-3.5 text-xs focus:bg-white focus:border-indigo-400/50 transition-all outline-none font-black text-indigo-700 cursor-pointer appearance-none">
+                                                    <option value="" disabled selected>Select a Batch</option>
+                                                </select>
+                                                <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none text-[10px]"></i>
                                             </div>
                                         </div>
                                     </div>
@@ -921,22 +1065,22 @@ var views = window.views = {
                                     </div>
 
                                     <div class="space-y-2">
-                                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Unit Cost (Buy)</label>
+                                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Unit Cost (Buy) - <span class="text-indigo-400 font-bold text-[8px] bg-indigo-50 px-1 rounded">LOCKED TO BATCH</span></label>
                                         <div class="relative">
                                              <div class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">Rs.</div>
                                              <input type="number" step="0.01" id="stock-cost" 
-                                                class="w-full bg-gray-50 border-2 border-transparent rounded-2xl pl-12 pr-4 py-4 text-lg focus:bg-white focus:border-gray-200 outline-none font-black text-gray-700 transition-all" 
-                                                value="0.00">
+                                                class="w-full bg-gray-100 border-2 border-transparent rounded-2xl pl-12 pr-4 py-4 text-lg outline-none font-black text-gray-500 transition-all cursor-not-allowed opacity-80" 
+                                                value="0.00" readonly title="Cost is managed via Item Batches">
                                         </div>
                                     </div>
 
                                     <div class="space-y-2">
-                                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Selling Price (MRP)</label>
+                                        <label class="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Selling Price (MRP) - <span class="text-indigo-400 font-bold text-[8px] bg-indigo-50 px-1 rounded">LOCKED TO BATCH</span></label>
                                         <div class="relative">
                                              <div class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">Rs.</div>
                                              <input type="number" step="0.01" id="stock-mrp" 
-                                                class="w-full bg-gray-50 border-2 border-transparent rounded-2xl pl-12 pr-4 py-4 text-lg focus:bg-white focus:border-gray-200 outline-none font-black text-gray-700 transition-all" 
-                                                value="0.00">
+                                                class="w-full bg-gray-100 border-2 border-transparent rounded-2xl pl-12 pr-4 py-4 text-lg outline-none font-black text-gray-500 transition-all cursor-not-allowed opacity-80" 
+                                                value="0.00" readonly title="MRP is managed via Item Batches">
                                         </div>
                                     </div>
                                 </div>
@@ -1083,19 +1227,43 @@ var views = window.views = {
 
             if (item) {
                 document.getElementById('stock-item-id').value = item.itemId;
-                document.getElementById('stock-cost').value = item.costPrice;
-                document.getElementById('stock-mrp').value = item.listPrice;
                 document.getElementById('view-supplier-id').value = item.supplierId || 'MANUAL';
                 document.getElementById('stock-unit-label').innerText = item.unit;
 
-                // Ensure Batch ID field is visible
+                // Populate Batch ID Dropdown
                 const batchContainer = document.getElementById('batch-id-container');
                 if (batchContainer) {
                     batchContainer.style.display = 'block';
-                    const batchIdInput = document.getElementById('stock-batch-id');
-                    if (batchIdInput) {
-                        batchIdInput.required = true;
-                        batchIdInput.value = item.batchId || 'B001';
+                    const batchSelect = document.getElementById('stock-batch-id');
+                    if (batchSelect) {
+                        batchSelect.required = true;
+                        
+                        // Fetch batches for this item
+                        db.item_batches.where('itemId').equals(item.itemId).toArray().then(batches => {
+                            const activeBatches = batches.filter(b => !b.isDiscontinued);
+                            
+                            if (activeBatches.length > 0) {
+                                batchSelect.innerHTML = activeBatches.map(b => 
+                                    `<option value="${b.batchId}" data-cost="${b.costPrice || 0}" data-mrp="${b.listPrice || 0}">${b.batchId} (Stock: ${b.currentStock || 0})</option>`
+                                ).join('');
+                            } else {
+                                batchSelect.innerHTML = `<option value="B001" data-cost="${item.costPrice || 0}" data-mrp="${item.listPrice || 0}">B001 (Auto/New)</option>`;
+                            }
+                            
+                            // Trigger initial population of prices
+                            const triggerChange = new Event('change');
+                            batchSelect.dispatchEvent(triggerChange);
+                        });
+
+                        // Handle batch selection changes to update locked prices
+                        batchSelect.onchange = (e) => {
+                            const selectedOption = e.target.options[e.target.selectedIndex];
+                            if (selectedOption) {
+                                document.getElementById('stock-cost').value = selectedOption.getAttribute('data-cost') || 0;
+                                document.getElementById('stock-mrp').value = selectedOption.getAttribute('data-mrp') || 0;
+                                updateTotal();
+                            }
+                        };
                     }
                 }
 
@@ -1125,6 +1293,22 @@ var views = window.views = {
             const costInput = parseFloat(document.getElementById('stock-cost').value);
             const mrpInput = parseFloat(document.getElementById('stock-mrp').value);
             const remarks = document.getElementById('stock-remarks').value;
+
+            // --- FAT FINGER GUARD ---
+            // Prevent accidental 9000 instead of 900
+            try {
+                const itemBeforeTx = await db.item_master.get(itemId);
+                if (itemBeforeTx) {
+                    const oldCost = parseFloat(itemBeforeTx.costPrice) || 0;
+                    if (oldCost > 0 && costInput > (oldCost * 3)) {
+                        if (!confirm(`⚠️ WARNING: ABNORMALLY HIGH PRICE DETECTED!\n\nThe new Cost Price (${costInput}) is more than 300% higher than the previous Cost Price (${oldCost}).\n\nAre you absolutely sure you want to save this?`)) {
+                            return; // Abort save
+                        }
+                    }
+                }
+            } catch(e) {
+                console.error("Fat-finger check error:", e);
+            }
 
             try {
                 await db.transaction('rw', db.item_master, db.inventory, db.stock_in, db.item_batches, db.audit_logs, async () => {
@@ -1466,20 +1650,61 @@ var views = window.views = {
                         }
                     }
 
-                    // 3. Sync Item Master (Prices & Flags) - FAVOR LATEST ACTIVE BATCH
+                    // 2b. DEDUP: Remove duplicate batch entries (same itemId+batchId), keep the one with prices
+                    const batchIdGroups = {};
+                    for (const b of batches) {
+                        const key = `${b.itemId}__${b.batchId}`;
+                        if (!batchIdGroups[key]) batchIdGroups[key] = [];
+                        batchIdGroups[key].push(b);
+                    }
+                    for (const group of Object.values(batchIdGroups)) {
+                        if (group.length > 1) {
+                            // Keep the one with the highest prices (most recently edited); delete the others
+                            group.sort((a, b) => {
+                                const aPrice = (a.listPrice || 0) + (a.costPrice || 0);
+                                const bPrice = (b.listPrice || 0) + (b.costPrice || 0);
+                                if (bPrice !== aPrice) return bPrice - aPrice; // Higher price = keep
+                                if (a.updatedAt && b.updatedAt) return new Date(b.updatedAt) - new Date(a.updatedAt);
+                                return (Number(b.id) || 0) - (Number(a.id) || 0);
+                            });
+                            const toDelete = group.slice(1).map(b => b.id);
+                            for (const delId of toDelete) {
+                                await db.item_batches.delete(delId);
+                            }
+                        }
+                    }
+
+                    // 3. Sync Item Master (Prices & Flags) - FAVOR LATEST ACTIVE BATCH PRICES
                     const activeBatchIds = new Set(batches.filter(b => !b.isDiscontinued).map(b => b.batchId));
-                    
-                    // Filter stock records to only include those from currently active batches
+                    const activeBatches = batches.filter(b => !b.isDiscontinued);
+
+                    // Pick best batch: prefer batches with actual prices, sorted by most recently updated
+                    // This handles duplicate batchId entries correctly
+                    const activeBatchesWithPrices = activeBatches
+                        .filter(b => (b.listPrice > 0 || b.costPrice > 0))
+                        .sort((a, b) => {
+                            if (a.updatedAt && b.updatedAt) return new Date(b.updatedAt) - new Date(a.updatedAt);
+                            return (Number(b.id) || 0) - (Number(a.id) || 0);
+                        });
+                    const latestActiveBatch = activeBatchesWithPrices.length > 0
+                        ? activeBatchesWithPrices[0]
+                        : (activeBatches.length > 0 ? [...activeBatches].sort((a,b) => (Number(b.id)||0)-(Number(a.id)||0))[0] : null);
+
+                    // Fallback to latest stock_in if no batches have prices
                     const activeStockRecords = stockInRecords.filter(r => activeBatchIds.has(r.batchId));
-                    
-                    // Use latest active record, or fallback to latest overall, or current item master
                     const latestStock = activeStockRecords.length > 0 
                         ? [...activeStockRecords].sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0] 
                         : (stockInRecords.length > 0 ? [...stockInRecords].sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0] : null);
-                    
-                    const finalMasterCost = latestStock && latestStock.costPrice > 0 ? parseFloat(latestStock.costPrice) : (parseFloat(item.costPrice) || 0);
-                    const finalMasterMRP = latestStock && latestStock.mrp > 0 ? parseFloat(latestStock.mrp) : (parseFloat(item.listPrice) || 0);
-                    const finalBatchId = latestStock && latestStock.batchId ? latestStock.batchId : (item.batchId || 'B001');
+
+                    // PRIORITY: batch prices (with valid price) > stock_in prices > existing item master prices
+                    const finalMasterCost = latestActiveBatch && latestActiveBatch.costPrice > 0
+                        ? parseFloat(latestActiveBatch.costPrice)
+                        : (latestStock && latestStock.costPrice > 0 ? parseFloat(latestStock.costPrice) : (parseFloat(item.costPrice) || 0));
+                    const finalMasterMRP = latestActiveBatch && latestActiveBatch.listPrice > 0
+                        ? parseFloat(latestActiveBatch.listPrice)
+                        : (latestStock && latestStock.mrp > 0 ? parseFloat(latestStock.mrp) : (parseFloat(item.listPrice) || 0));
+                    const finalBatchId = latestActiveBatch ? latestActiveBatch.batchId
+                        : (latestStock && latestStock.batchId ? latestStock.batchId : (item.batchId || 'B001'));
 
                     await db.item_master.update(item.itemId, {
                         useBatch: true,
@@ -1510,22 +1735,43 @@ var views = window.views = {
                 db.stock_in.where('itemId').equals(itemId).toArray()
             ]);
 
-            const activeBatchIds = new Set(batches.filter(b => !b.isDiscontinued).map(b => b.batchId));
-            const activeStockRecords = stockInRecords.filter(r => activeBatchIds.has(r.batchId));
+            const activeBatches = batches.filter(b => !b.isDiscontinued);
 
+            // Pick best batch: prefer batches with actual prices, sorted by most recently updated
+            const activeBatchesWithPrices = activeBatches
+                .filter(b => (b.listPrice > 0 || b.costPrice > 0))
+                .sort((a, b) => {
+                    if (a.updatedAt && b.updatedAt) return new Date(b.updatedAt) - new Date(a.updatedAt);
+                    return (Number(b.id) || 0) - (Number(a.id) || 0);
+                });
+            const latestActiveBatch = activeBatchesWithPrices.length > 0
+                ? activeBatchesWithPrices[0]
+                : (activeBatches.length > 0 ? [...activeBatches].sort((a,b) => (Number(b.id)||0)-(Number(a.id)||0))[0] : null);
+
+            // Fallback: use latest stock_in record
+            const activeBatchIds = new Set(activeBatches.map(b => b.batchId));
+            const activeStockRecords = stockInRecords.filter(r => activeBatchIds.has(r.batchId));
             const latestStock = activeStockRecords.length > 0 
                 ? [...activeStockRecords].sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0] 
                 : (stockInRecords.length > 0 ? [...stockInRecords].sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0))[0] : null);
 
-            if (latestStock) {
-                await db.item_master.update(itemId, {
-                    costPrice: parseFloat(latestStock.costPrice),
-                    listPrice: parseFloat(latestStock.mrp),
-                    batchId: latestStock.batchId,
-                    useBatch: true
-                });
-                app.itemCache = []; // Invalidate cache
-            }
+            // PRIORITY: batch prices (with valid price) > stock_in prices > current master prices
+            const finalCost = latestActiveBatch && latestActiveBatch.costPrice > 0
+                ? parseFloat(latestActiveBatch.costPrice)
+                : (latestStock && latestStock.costPrice > 0 ? parseFloat(latestStock.costPrice) : parseFloat(item.costPrice) || 0);
+            const finalMRP = latestActiveBatch && latestActiveBatch.listPrice > 0
+                ? parseFloat(latestActiveBatch.listPrice)
+                : (latestStock && latestStock.mrp > 0 ? parseFloat(latestStock.mrp) : parseFloat(item.listPrice) || 0);
+            const finalBatchId = latestActiveBatch ? latestActiveBatch.batchId
+                : (latestStock ? latestStock.batchId : item.batchId);
+
+            await db.item_master.update(itemId, {
+                costPrice: finalCost,
+                listPrice: finalMRP,
+                batchId: finalBatchId,
+                useBatch: true
+            });
+            app.itemCache = []; // Invalidate cache
         } catch (err) {
             console.error('Single item sync failed:', err);
         }
@@ -1722,9 +1968,6 @@ var views = window.views = {
                  </td>
                  <td class="px-6 py-4 text-right">
                     <div class="flex justify-end gap-2.5 ${app.isAdmin ? '' : 'hidden'}">
-                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.editStockIn(${r.id})); } else { views.editStockIn(${r.id}); }" class="w-9 h-9 flex items-center justify-center bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-600 hover:text-white transition-all shadow-sm border border-blue-200" title="Edit Entry">
-                            <i class="fa-solid fa-pen-to-square text-xs"></i>
-                        </button>
                         <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.deleteStockIn(${r.id})); } else { views.deleteStockIn(${r.id}); }" class="w-9 h-9 flex items-center justify-center bg-red-100 text-red-700 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm border border-red-200" title="Delete Entry">
                             <i class="fa-solid fa-trash-can text-xs"></i>
                         </button>
@@ -1732,6 +1975,29 @@ var views = window.views = {
                  </td>
              </tr>
          `).join('');
+
+        const totalQty = recents.reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
+        const totalValue = recents.reduce((sum, r) => sum + ((parseFloat(r.qty) || 0) * (parseFloat(r.costPrice) || 0)), 0);
+
+        if (recents.length > 0) {
+            document.getElementById('stockin-recent-body').innerHTML += `
+             <tr class="bg-indigo-50/80 border-t-2 border-indigo-200">
+                <td colspan="5" class="px-6 py-4 text-right font-black text-indigo-900 text-sm uppercase tracking-wider">
+                    Total Volume:
+                </td>
+                <td class="px-6 py-4 text-center">
+                    <span class="inline-flex items-center gap-1 bg-indigo-200 text-indigo-900 px-3 py-1.5 rounded-xl font-black text-sm border border-indigo-300 shadow-sm">
+                        ${totalQty}
+                    </span>
+                 </td>
+                 <td colspan="2" class="px-6 py-4 text-left">
+                    <span class="font-black text-indigo-900 text-sm bg-indigo-100 px-3 py-1.5 rounded-xl border border-indigo-200 shadow-sm">
+                        ${utils.formatCurrency(totalValue)}
+                    </span>
+                 </td>
+             </tr>
+            `;
+        }
     },
 
     editStockIn: async (id) => {
@@ -2066,9 +2332,6 @@ var views = window.views = {
                         <button onclick="views.exportInventoryToCSV()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-sm active:scale-95 ${app.isAdmin ? '' : 'hidden'}">
                             <i class="fa-solid fa-file-export"></i> Export
                         </button>
-                         <button onclick="views.recalculateAllInventory()" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-sm active:scale-95 ${app.isAdmin ? '' : 'hidden'}">
-                            <i class="fa-solid fa-sync"></i> Sync & Recalculate
-                        </button>
                     </div>
                 </div>
 
@@ -2364,12 +2627,28 @@ var views = window.views = {
                         }
                     }
 
-                    // Identify the ACTUAL latest batch for this item to keep it in sync (Favoring active batches)
-                    const itemStocks = (stockInMap.get(item.itemId) || []).sort((a,b) => (Number(b.id) || 0) - (Number(a.id) || 0));
-                    const latestStockRecord = itemStocks.find(s => !discStatusMap.get(`${item.itemId}_${String(s.batchId || 'B001').toLowerCase()}`)) || itemStocks[0];
+                    // Identify the ACTUAL latest batch for this item to keep it in sync.
+                    // CRITICAL FIX: Sort by date DESC then ID DESC so the most recently DATED
+                    // purchase (not just highest auto-increment ID) determines the item master price.
+                    const itemStocks = (stockInMap.get(item.itemId) || []).sort((a, b) => {
+                        const dateA = a.date ? String(a.date) : '0';
+                        const dateB = b.date ? String(b.date) : '0';
+                        if (dateA !== dateB) return dateB < dateA ? -1 : 1; // DESC
+                        return (Number(b.id) || 0) - (Number(a.id) || 0);  // DESC
+                    });
+                    // Prefer active-batch records, fallback to any record
+                    const latestStockRecord = itemStocks.find(s =>
+                        (parseFloat(s.costPrice) > 0 || parseFloat(s.mrp) > 0) &&
+                        !discStatusMap.get(`${item.itemId}_${String(s.batchId || 'B001').toLowerCase()}`)
+                    ) || itemStocks.find(s => parseFloat(s.costPrice) > 0 || parseFloat(s.mrp) > 0) || itemStocks[0];
+
                     const finalBatchId = latestStockRecord ? latestStockRecord.batchId : (item.batchId || 'B001');
-                    const finalCost = latestStockRecord ? (parseFloat(latestStockRecord.costPrice) || 0) : (parseFloat(item.costPrice) || 0);
-                    const finalMRP = latestStockRecord ? (parseFloat(latestStockRecord.mrp) || 0) : (parseFloat(item.listPrice) || 0);
+                    const finalCost = (latestStockRecord && parseFloat(latestStockRecord.costPrice) > 0)
+                        ? parseFloat(latestStockRecord.costPrice)
+                        : (parseFloat(item.costPrice) || 0);
+                    const finalMRP = (latestStockRecord && parseFloat(latestStockRecord.mrp) > 0)
+                        ? parseFloat(latestStockRecord.mrp)
+                        : (parseFloat(item.listPrice) || 0);
 
                     // Force sync Master record if it differs from latest stock in
                     if (latestStockRecord || (item.costPrice !== finalCost || item.listPrice !== finalMRP || item.batchId !== finalBatchId)) {
@@ -2421,18 +2700,22 @@ var views = window.views = {
                 const batchMap = new Map();
 
                 // Track latest price found for each specific batch
+                // CRITICAL FIX: Sort by date ASC then ID ASC so the most recently DATED
+                // stock-in entry (not just highest auto-increment ID) determines batch price.
+                // This prevents cloud-synced or out-of-order records from corrupting prices.
+                const sortedForBatchPrice = [...allStockIn].sort((a, b) => {
+                    const dateA = a.date ? String(a.date) : '0';
+                    const dateB = b.date ? String(b.date) : '0';
+                    if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+                    return (Number(a.id) || 0) - (Number(b.id) || 0); // same date → lower ID wins (older purchase)
+                });
+
                 const batchLatestPriceMap = new Map();
 
-                // Rebuild batches from stock in records
+                // Rebuild batches from stock in records (using original allStockIn for stock counts)
                 for (const sin of allStockIn) {
                     const bId = (sin.batchId && sin.batchId.trim() !== '') ? sin.batchId : 'B001';
                     const key = `${sin.itemId}_${bId.toLowerCase()}`;
-
-                    // Update the latest price for this specific batch key
-                    batchLatestPriceMap.set(key, {
-                        costPrice: parseFloat(sin.costPrice) || 0,
-                        listPrice: parseFloat(sin.mrp) || 0
-                    });
 
                     if (!batchMap.has(key)) {
                         batchMap.set(key, {
@@ -2441,13 +2724,23 @@ var views = window.views = {
                             isDiscontinued: discStatusMap.get(key) || false,
                             initialStock: 0,
                             currentStock: 0
-                            // Prices will be set after the loop from batchLatestPriceMap
                         });
                     }
                     const b = batchMap.get(key);
                     const qty = (parseFloat(sin.qty) || 0);
                     b.initialStock = (b.initialStock || 0) + qty;
                     b.currentStock = (b.currentStock || 0) + qty;
+                }
+
+                // Build price map from date-sorted records (LAST entry per batch = most recent date wins)
+                for (const sin of sortedForBatchPrice) {
+                    const bId = (sin.batchId && sin.batchId.trim() !== '') ? sin.batchId : 'B001';
+                    const key = `${sin.itemId}_${bId.toLowerCase()}`;
+                    const cost = parseFloat(sin.costPrice) || 0;
+                    const mrp  = parseFloat(sin.mrp) || 0;
+                    if (cost > 0 || mrp > 0) { // Only update if the record has valid prices
+                        batchLatestPriceMap.set(key, { costPrice: cost, listPrice: mrp });
+                    }
                 }
 
                 const itemLookupMap = new Map(items.map(i => [i.itemId, i]));
@@ -2460,6 +2753,10 @@ var views = window.views = {
                         // Fix for 0.00 prices: Fallback to master item price if batch price is zero
                         b.costPrice = (prices.costPrice > 0) ? prices.costPrice : (master ? parseFloat(master.costPrice) || 0 : 0);
                         b.listPrice = (prices.listPrice > 0) ? prices.listPrice : (master ? parseFloat(master.listPrice) || 0 : 0);
+                    } else if (master) {
+                        // No stock-in records with valid prices found — use item master as final fallback
+                        b.costPrice = parseFloat(master.costPrice) || 0;
+                        b.listPrice = parseFloat(master.listPrice) || 0;
                     }
                 }
 
