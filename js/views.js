@@ -2821,127 +2821,125 @@ var views = window.views = {
             utils.showNotification('Safety backup created. Processing data...', 'info');
 
             await db.transaction('rw', db.sales, db.sales_archive, db.stock_in, db.stock_in_archive, db.audit_logs, db.purchases, db.purchases_archive, db.expenses, db.expenses_archive, async () => {
-                const startDate = `${year}-01-01`;
                 const endDate = `${year}-12-31T23:59:59`;
 
-                const targetSales = await db.sales
-                    .where('date').between(startDate, endDate)
-                    .filter(s => s.paymentStatus !== 'Pending')
-                    .toArray();
+                // Fetch ALL historical records up to the end of the selected year
+                const allPastSales = await db.sales.where('date').belowOrEqual(endDate).toArray();
+                const allPastStockIn = await db.stock_in.where('date').belowOrEqual(endDate).toArray();
+                const allPastPurchases = await db.purchases.where('date').belowOrEqual(endDate).toArray();
+                const allPastExpenses = await db.expenses.where('date').belowOrEqual(endDate).toArray();
 
-                const targetStockIn = await db.stock_in
-                    .where('date').between(startDate, endDate)
-                    .toArray();
-
-                const targetPurchases = await db.purchases
-                    .where('date').between(startDate, endDate)
-                    .toArray();
-
-                const targetExpenses = await db.expenses
-                    .where('date').between(startDate, endDate)
-                    .toArray();
-
-                if (targetSales.length === 0 && targetStockIn.length === 0 && targetPurchases.length === 0 && targetExpenses.length === 0) {
-                    throw new Error(`No records found for the year ${year}.`);
+                if (allPastSales.length === 0 && allPastStockIn.length === 0 && allPastPurchases.length === 0 && allPastExpenses.length === 0) {
+                    throw new Error(`No records found to archive up to the end of ${year}.`);
                 }
 
-                // --- 1. ARCHIVE SALES ---
-                if (targetSales.length > 0) {
-                    const archiveSales = targetSales.map(s => {
-                        let ns = { ...s, archiveYear: year };
-                        delete ns.id; // Delete original ID so archive table auto-increments
-                        return ns;
-                    });
-                    await db.sales_archive.bulkAdd(archiveSales);
-                    await db.sales.bulkDelete(targetSales.map(s => s.id));
-                }
-
-                // --- 1.5 CALCULATE AND CREATE CARRY OVER ---
-                const carryOverMap = new Map();
-                for (const sin of targetStockIn) {
+                // --- 1. CALCULATE EXACT OPENING BALANCES ---
+                const balanceMap = new Map();
+                
+                // Add all stock-in
+                for (const sin of allPastStockIn) {
                     const bId = sin.batchId || 'B001';
                     const key = `${sin.itemId}_${bId}`;
-                    if (!carryOverMap.has(key)) {
-                        carryOverMap.set(key, {
+                    if (!balanceMap.has(key)) {
+                        balanceMap.set(key, {
                             itemId: sin.itemId,
+                            itemName: sin.itemName,
                             batchId: bId,
                             qty: 0,
                             costPrice: sin.costPrice,
                             mrp: sin.mrp,
-                            supplierId: sin.supplierId || ''
+                            supplierId: sin.supplierId || '',
+                            lastDate: sin.date || '0'
                         });
                     }
-                    const b = carryOverMap.get(key);
+                    const b = balanceMap.get(key);
                     b.qty += (parseFloat(sin.qty) || 0);
-                    b.costPrice = sin.costPrice || b.costPrice; 
-                    b.mrp = sin.mrp || b.mrp;
+                    // Keep the latest price
+                    const dateStr = sin.date ? String(sin.date) : '0';
+                    if (dateStr > b.lastDate) {
+                        b.costPrice = sin.costPrice;
+                        b.mrp = sin.mrp;
+                        b.lastDate = dateStr;
+                    }
                 }
-                for (const sale of targetSales) {
+
+                // Subtract all sales
+                for (const sale of allPastSales) {
                     if (sale.paymentStatus === 'Cancelled') continue;
                     const bId = sale.batchId || 'B001';
                     const key = `${sale.itemId}_${bId}`;
-                    if (carryOverMap.has(key)) {
-                        carryOverMap.get(key).qty -= (parseFloat(sale.qty) || 0);
+                    if (balanceMap.has(key)) {
+                        balanceMap.get(key).qty -= (parseFloat(sale.qty) || 0);
+                    } else {
+                        // Edge case: Sold without stock-in record (negative balance)
+                        balanceMap.set(key, {
+                            itemId: sale.itemId,
+                            itemName: sale.itemName,
+                            batchId: bId,
+                            qty: -(parseFloat(sale.qty) || 0),
+                            costPrice: sale.costPrice || 0,
+                            mrp: sale.mrp || 0,
+                            supplierId: sale.supplierId || '',
+                            lastDate: '0'
+                        });
                     }
                 }
-                
+
+                // Create the opening balance records for next year
                 const carryOverRecords = [];
                 const nextYearDate = `${year + 1}-01-01T00:00:00`;
-                for (const b of carryOverMap.values()) {
-                    if (b.qty > 0) {
+                for (const b of balanceMap.values()) {
+                    if (b.qty !== 0) { // Keep even negative balances so inventory is accurate
                         carryOverRecords.push({
                             itemId: b.itemId,
+                            itemName: b.itemName,
                             batchId: b.batchId,
                             qty: b.qty,
                             costPrice: b.costPrice,
                             mrp: b.mrp,
                             supplierId: b.supplierId,
                             date: nextYearDate,
-                            notes: `Balance carry-over from ${year}`,
+                            notes: `Opening Balance for ${year + 1}`,
                             total: b.qty * b.costPrice
                         });
                     }
                 }
+
+                // --- 2. ARCHIVE DATA ---
+                const archiveData = (sourceArray) => {
+                    return sourceArray.map(item => {
+                        let ns = { ...item, archiveYear: year };
+                        delete ns.id;
+                        return ns;
+                    });
+                };
+
+                if (allPastSales.length > 0) {
+                    await db.sales_archive.bulkAdd(archiveData(allPastSales));
+                    await db.sales.bulkDelete(allPastSales.map(s => s.id));
+                }
+
+                if (allPastStockIn.length > 0) {
+                    await db.stock_in_archive.bulkAdd(archiveData(allPastStockIn));
+                    await db.stock_in.bulkDelete(allPastStockIn.map(s => s.id));
+                }
+
+                if (allPastPurchases.length > 0) {
+                    await db.purchases_archive.bulkAdd(archiveData(allPastPurchases));
+                    await db.purchases.bulkDelete(allPastPurchases.map(s => s.id));
+                }
+
+                if (allPastExpenses.length > 0) {
+                    await db.expenses_archive.bulkAdd(archiveData(allPastExpenses));
+                    await db.expenses.bulkDelete(allPastExpenses.map(s => s.id));
+                }
+
+                // --- 3. INSERT NEW BALANCES ---
                 if (carryOverRecords.length > 0) {
                     await db.stock_in.bulkAdd(carryOverRecords);
                 }
 
-                // --- 2. ARCHIVE STOCK IN ---
-
-                // Move original Stock In to Archive
-                if (targetStockIn.length > 0) {
-                    const archiveStockIn = targetStockIn.map(sin => {
-                        let ns = { ...sin, archiveYear: year };
-                        delete ns.id;
-                        return ns;
-                    });
-                    await db.stock_in_archive.bulkAdd(archiveStockIn);
-                    await db.stock_in.bulkDelete(targetStockIn.map(sin => sin.id));
-                }
-
-                // --- 2.5 ARCHIVE PURCHASES ---
-                if (targetPurchases.length > 0) {
-                    const archivePurchases = targetPurchases.map(p => {
-                        let ns = { ...p, archiveYear: year };
-                        delete ns.id;
-                        return ns;
-                    });
-                    await db.purchases_archive.bulkAdd(archivePurchases);
-                    await db.purchases.bulkDelete(targetPurchases.map(p => p.id));
-                }
-
-                // --- 2.6 ARCHIVE EXPENSES ---
-                if (targetExpenses.length > 0) {
-                    const archiveExpenses = targetExpenses.map(e => {
-                        let ns = { ...e, archiveYear: year };
-                        delete ns.id;
-                        return ns;
-                    });
-                    await db.expenses_archive.bulkAdd(archiveExpenses);
-                    await db.expenses.bulkDelete(targetExpenses.map(e => e.id));
-                }
-
-                await utils.logAction('Annual Closing', `Archived Year ${year}: ${targetSales.length} Sales, ${targetStockIn.length} Stock-In, ${targetPurchases.length} Purchases, ${targetExpenses.length} Expenses.`);
+                await utils.logAction('Annual Closing', `Archived up to ${year}: ${allPastSales.length} Sales, ${allPastStockIn.length} Stock-In, ${allPastPurchases.length} Purchases, ${allPastExpenses.length} Expenses.`);
             });
 
             utils.showNotification(`Annual Closing for ${year} complete! System history has been consolidated.`, 'success');
@@ -4856,38 +4854,34 @@ var views = window.views = {
         window.salesHistoryView = window.salesHistoryView || 'sales';
         const targetStore = window.salesHistoryView === 'quotations' ? db.quotations : db.sales;
 
-        // Optimized Data Fetching: Avoid .toArray() on full set
-        if (!query && !searchMonth) {
+        // Optimized Data Fetching: Use Dexie Collection filters to search entire DB without memory issues
+        if (searchMonth && !query) {
+            // Only month provided
+            sales = await targetStore.where('date').startsWith(searchMonth).reverse().toArray();
+        } else if (query) {
+            const q = query.toLowerCase();
+            // Search query provided (with or without month). Filter via cursor to search entire history safely.
+            sales = await targetStore.orderBy('date').reverse().filter(s => {
+                // If month is provided, check month first
+                if (searchMonth) {
+                    if (!s.date) return false;
+                    let matchesMonth = s.date.startsWith(searchMonth);
+                    if (!matchesMonth) {
+                        const d = new Date(s.date);
+                        if (!isNaN(d.getTime())) matchesMonth = d.toISOString().startsWith(searchMonth);
+                    }
+                    if (!matchesMonth) return false;
+                }
+                
+                return String(s.billNo).toLowerCase().includes(q) ||
+                    String(s.itemId).toLowerCase().includes(q) ||
+                    String(s.supplierId || '').toLowerCase().includes(q) ||
+                    (s.itemName && s.itemName.toLowerCase().includes(q)) ||
+                    (String(s.date).includes(q) || utils.formatDate(s.date).includes(q));
+            }).limit(1000).toArray();
+        } else {
             // Default view: Latest 1000
             sales = await targetStore.orderBy('date').reverse().limit(1000).toArray();
-        } else if (searchMonth && !query) {
-            // Month only: Use index
-            sales = await targetStore.where('date').startsWith(searchMonth).reverse().toArray();
-        } else {
-            // Search or combined: Fetch latest 2000 for filtering (memory safety cap)
-            sales = await targetStore.orderBy('date').reverse().limit(2000).toArray();
-        }
-
-        if (searchMonth) {
-            sales = sales.filter(s => {
-                if (!s.date) return false;
-                if (s.date.startsWith(searchMonth)) return true;
-                const d = new Date(s.date);
-                if (isNaN(d.getTime())) return false;
-                return d.toISOString().startsWith(searchMonth);
-            });
-        }
-
-        if (query) {
-            const q = query.toLowerCase();
-            sales = sales.filter(s =>
-                String(s.billNo).toLowerCase().includes(q) ||
-                String(s.itemId).toLowerCase().includes(q) ||
-                String(s.supplierId || '').toLowerCase().includes(q) ||
-                (s.itemName && s.itemName.toLowerCase().includes(q)) ||
-                (String(s.date).includes(q) ||
-                    utils.formatDate(s.date).includes(q))
-            );
         }
 
         const totalFound = sales.length;
@@ -4910,8 +4904,8 @@ var views = window.views = {
                 <div class="flex flex-col gap-1">
                     <div class="flex items-center gap-2">
                         <span class="text-gray-500">Showing:</span>
-                        <span>${sales.length} of ${totalFound} Transactions</span>
-                        ${!isFiltered ? '<span class="bg-indigo-100 px-2 py-0.5 rounded text-[10px] text-indigo-700">Recent 50 Only</span>' : '<span class="bg-emerald-100 px-2 py-0.5 rounded text-[10px] text-emerald-700">All matched results</span>'}
+                        <span>${sales.length}${sales.length === 1000 ? '+' : ''} Transactions</span>
+                        ${!isFiltered ? '<span class="bg-indigo-100 px-2 py-0.5 rounded text-[10px] text-indigo-700">Recent 50 Only</span>' : '<span class="bg-emerald-100 px-2 py-0.5 rounded text-[10px] text-emerald-700">Matched results</span>'}
                     </div>
                 </div>
                 <div class="flex items-center gap-6">
@@ -6616,6 +6610,13 @@ var views = window.views = {
                             </button>
                             <p class="text-[10px] text-gray-400">Archives old sales & purchases to speed up the system.</p>
                         </div>
+                        
+                        <div class="flex flex-col gap-2">
+                            <button onclick="if(prompt('Enter password to restore archive:') === '8542074') views.undoAnnualClosing(); else alert('Incorrect Password!');" class="px-6 py-3 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm border border-blue-200">
+                                <i class="fa-solid fa-clock-rotate-left"></i> Restore Archive Data
+                            </button>
+                            <p class="text-[10px] text-gray-400">Safely restores archived data to fix missing history and incorrect stock.</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -7185,6 +7186,89 @@ var views = window.views = {
         } catch (err) {
             console.error('Backup failed:', err);
             utils.showNotification('Backup failed: ' + err.message, 'error');
+        }
+    },
+
+    undoAnnualClosing: async () => {
+        if (!app.isAdmin) {
+            app.requestAuth(() => views.undoAnnualClosing());
+            return;
+        }
+
+        if (!confirm(`⚠️ SYSTEM RECOVERY: Restore Archived Data\n\nThis process will:\n1. Move all records from Archive tables back to the Main tables.\n2. Delete fake 'carry-over' stock records created during archiving.\n3. Recalculate inventory correctly.\n\nContinue?`)) return;
+
+        try {
+            utils.showNotification('Starting System Recovery... Please wait.', 'info');
+
+            await db.transaction('rw', db.sales, db.sales_archive, db.stock_in, db.stock_in_archive, db.purchases, db.purchases_archive, db.expenses, db.expenses_archive, async () => {
+                // 1. Move Sales back
+                const archivedSales = await db.sales_archive.toArray();
+                if (archivedSales.length > 0) {
+                    const restoredSales = archivedSales.map(s => {
+                        let ns = { ...s };
+                        delete ns.id;
+                        delete ns.archiveYear;
+                        return ns;
+                    });
+                    await db.sales.bulkAdd(restoredSales);
+                    await db.sales_archive.clear();
+                }
+
+                // 2. Move Stock In back
+                const archivedStockIn = await db.stock_in_archive.toArray();
+                if (archivedStockIn.length > 0) {
+                    const restoredStockIn = archivedStockIn.map(s => {
+                        let ns = { ...s };
+                        delete ns.id;
+                        delete ns.archiveYear;
+                        return ns;
+                    });
+                    await db.stock_in.bulkAdd(restoredStockIn);
+                    await db.stock_in_archive.clear();
+                }
+
+                // 3. Move Purchases back
+                const archivedPurchases = await db.purchases_archive.toArray();
+                if (archivedPurchases.length > 0) {
+                    const restoredPurchases = archivedPurchases.map(p => {
+                        let ns = { ...p };
+                        delete ns.id;
+                        delete ns.archiveYear;
+                        return ns;
+                    });
+                    await db.purchases.bulkAdd(restoredPurchases);
+                    await db.purchases_archive.clear();
+                }
+
+                // 4. Move Expenses back
+                const archivedExpenses = await db.expenses_archive.toArray();
+                if (archivedExpenses.length > 0) {
+                    const restoredExpenses = archivedExpenses.map(e => {
+                        let ns = { ...e };
+                        delete ns.id;
+                        delete ns.archiveYear;
+                        return ns;
+                    });
+                    await db.expenses.bulkAdd(restoredExpenses);
+                    await db.expenses_archive.clear();
+                }
+
+                // 5. Delete carry-over records
+                const allStockIn = await db.stock_in.toArray();
+                const carryOverRecords = allStockIn.filter(s => s.notes && (String(s.notes).startsWith('Balance carry-over from') || String(s.notes).startsWith('Opening Balance for')));
+                if (carryOverRecords.length > 0) {
+                    await db.stock_in.bulkDelete(carryOverRecords.map(s => s.id));
+                }
+                
+                await utils.logAction('System Recovery', `Restored data from archives: ${archivedSales.length} Sales, ${archivedStockIn.length} Stock-In, ${archivedPurchases.length} Purchases, ${archivedExpenses.length} Expenses.`);
+            });
+
+            utils.showNotification('Data successfully restored! Recalculating inventory...', 'success');
+            await views.recalculateAllInventory(true);
+
+        } catch (err) {
+            console.error('System recovery failed:', err);
+            utils.showNotification('System recovery failed: ' + err.message, 'error');
         }
     },
 
