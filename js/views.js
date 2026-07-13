@@ -4878,7 +4878,7 @@ var views = window.views = {
                     String(s.supplierId || '').toLowerCase().includes(q) ||
                     (s.itemName && s.itemName.toLowerCase().includes(q)) ||
                     (String(s.date).includes(q) || utils.formatDate(s.date).includes(q));
-            }).limit(1000).toArray();
+            }).toArray();
         } else {
             // Default view: Latest 1000
             sales = await targetStore.orderBy('date').reverse().limit(1000).toArray();
@@ -4889,13 +4889,9 @@ var views = window.views = {
         const totalProfitVal = sales.filter(s => s.paymentStatus !== 'Cancelled').reduce((sum, s) => sum + (s.profit || 0), 0);
         const totalBankFeeVal = sales.filter(s => s.paymentStatus !== 'Cancelled').reduce((sum, s) => sum + (s.bankFee || 0), 0);
 
-        // Limit to latest 50 for display ONLY if no search filters are active
         const isFiltered = query || searchMonth;
         if (!isFiltered) {
             sales = sales.slice(0, 50);
-        } else if (sales.length > 500) {
-            // For performance, only show top 500 even if filtered
-            sales = sales.slice(0, 500);
         }
 
         const infoEl = document.getElementById('sales-pagination-info');
@@ -6316,6 +6312,17 @@ var views = window.views = {
                             </span>
                         </button>
 
+                        <!-- Daily CSV Export -->
+                        <button onclick="views.downloadDailyCSVs()" class="group relative overflow-hidden bg-white border-2 border-gray-100 hover:border-green-500/30 rounded-2xl p-6 text-left transition-all hover:shadow-lg hover:shadow-green-500/5 ${(app.isAdmin || app.isViewOnly) ? '' : 'hidden'}">
+                            <div class="absolute top-0 right-0 w-24 h-24 bg-green-500/5 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+                            <i class="fa-solid fa-file-csv text-3xl text-gray-300 group-hover:text-green-600 mb-4 transition-colors"></i>
+                            <h4 class="font-bold text-gray-800 mb-1">Export Daily CSVs</h4>
+                            <p class="text-xs text-gray-500 mb-4">Download today's sales, stock, and expenses as CSV files.</p>
+                            <span class="inline-flex items-center text-xs font-bold text-green-600 group-hover:translate-x-1 transition-transform">
+                                Export CSV <i class="fa-solid fa-arrow-right ml-1"></i>
+                            </span>
+                        </button>
+
                         <!-- Restore -->
                         <button onclick="document.getElementById('restore-input').click()" class="group relative overflow-hidden bg-white border-2 border-gray-100 hover:border-secondary/30 rounded-2xl p-6 text-left transition-all hover:shadow-lg hover:shadow-secondary/5 ${app.isAdmin ? '' : 'hidden'}">
                             <div class="absolute top-0 right-0 w-24 h-24 bg-secondary/5 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
@@ -7186,6 +7193,69 @@ var views = window.views = {
         } catch (err) {
             console.error('Backup failed:', err);
             utils.showNotification('Backup failed: ' + err.message, 'error');
+        }
+    },
+
+    downloadDailyCSVs: async () => {
+        try {
+            utils.showNotification('Preparing daily CSV reports...', 'info');
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            const timestamp = today.toLocaleString().replace(/[\/\s:]/g, '_');
+
+            const downloadCSV = (filename, csvContent) => {
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                if (link.download !== undefined) {
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', filename);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            };
+
+            const sales = await db.sales.filter(s => s.date && s.date.startsWith(todayStr)).toArray();
+            let salesCsv = 'Date,Bill No,Item ID,Item Name,Batch,Qty,Price,Total,Profit,Method\n';
+            sales.forEach(s => {
+                salesCsv += `"${utils.formatDate(s.date)}","${s.billNo}","${s.itemId}","${utils.cleanItemName(s.itemName)}","${s.batchId || ''}","${s.qty}","${s.price}","${s.total}","${s.profit}","${s.method}"\n`;
+            });
+            downloadCSV(`Today_Sales_${timestamp}.csv`, salesCsv);
+
+            const stockIn = await db.stock_in.filter(s => s.date && s.date.startsWith(todayStr)).toArray();
+            let stockCsv = 'Date,Ref No,Supplier ID,Item ID,Qty,Cost,Total Value,Notes\n';
+            stockIn.forEach(s => {
+                stockCsv += `"${utils.formatDate(s.date)}","${s.refNo || ''}","${s.supplierId || ''}","${s.itemId}","${s.qty}","${s.costPrice}","${s.totalValue}","${s.notes || ''}"\n`;
+            });
+            downloadCSV(`Today_StockIn_${timestamp}.csv`, stockCsv);
+
+            const inventory = await db.inventory.toArray();
+            let invCsv = 'Item ID,Item Name,Supplier ID,Stock In,Current Stock\n';
+            inventory.forEach(i => {
+                invCsv += `"${i.itemId}","${i.itemName}","${i.supplierId || ''}","${i.stockIn || 0}","${i.currentStock || 0}"\n`;
+            });
+            downloadCSV(`All_Inventory_${timestamp}.csv`, invCsv);
+
+            const purchases = await db.purchases.filter(p => p.date && p.date.startsWith(todayStr)).toArray();
+            let purCsv = 'Date,Ref No,Supplier,Total Amount,Paid Amount,Status,Notes\n';
+            purchases.forEach(p => {
+                purCsv += `"${utils.formatDate(p.date)}","${p.refNo}","${p.supplierId}","${p.totalAmount}","${p.paidAmount}","${p.status}","${p.notes || ''}"\n`;
+            });
+            downloadCSV(`Today_Purchases_${timestamp}.csv`, purCsv);
+
+            const expenses = await db.expenses.filter(e => e.date && e.date.startsWith(todayStr)).toArray();
+            let expCsv = 'Date,Category,Amount,Description\n';
+            expenses.forEach(e => {
+                expCsv += `"${utils.formatDate(e.date)}","${e.category}","${e.amount}","${e.description || ''}"\n`;
+            });
+            downloadCSV(`Today_Expenses_${timestamp}.csv`, expCsv);
+
+            utils.showNotification('Daily CSV Reports downloaded successfully!', 'success');
+        } catch (err) {
+            console.error('Error exporting daily CSVs:', err);
+            utils.showNotification('Failed to export daily CSVs', 'error');
         }
     },
 
@@ -8245,7 +8315,7 @@ var views = window.views = {
                                     class="text-[10px] font-bold px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer"
                                     onchange="app.updateReportSummaryTable()">
                                 <button
-                                    onclick="views.exportToPDF('daily-sales-summary-report-table', 'Daily Sales Summary')"
+                                    onclick="views.exportToPDF('daily-sales-summary-report-table', 'Daily Sales Summary ' + (document.getElementById('report-summary-month-filter').value ? '- ' + document.getElementById('report-summary-month-filter').value : '(Latest)'))"
                                     class="text-[10px] bg-red-50 text-red-600 px-3 py-1 rounded-lg hover:bg-red-100 transition-all flex items-center gap-1">
                                     <i class="fa-solid fa-file-pdf"></i> PDF
                                 </button>
@@ -8316,7 +8386,7 @@ var views = window.views = {
                                 class="w-24 text-center text-sm font-bold bg-indigo-50 border-2 border-indigo-200 rounded-xl px-2 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none text-indigo-700 shadow-sm transition-all cursor-pointer"
                                 placeholder="YYYY">
                         </div>
-                        <button onclick="views.exportToPDF('monthly-performance-table', 'Monthly Financial Performance')" class="text-[10px] bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200 transition-all flex items-center gap-1">
+                        <button onclick="views.exportToPDF('monthly-performance-table', 'Monthly Financial Performance - ' + (document.getElementById('report-year-input').value || '${app.currentReportYear}'))" class="text-[10px] bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200 transition-all flex items-center gap-1">
                             <i class="fa-solid fa-file-pdf"></i> Download PDF
                         </button>
                     </h4>
@@ -8536,7 +8606,7 @@ var views = window.views = {
                             <input type="month" value="${app.currentReportMonth}" onchange="app.currentReportMonth = this.value; views.initReports();" class="text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1 focus:ring-1 focus:ring-purple-500 outline-none">
                          </div>
                          <span class="flex items-center gap-4">
-                            <button onclick="views.exportToPDF('month-sales-report-table', 'Month Sales Report')" class="text-[10px] bg-purple-100 text-purple-700 px-3 py-1 rounded-lg hover:bg-purple-200 transition-all flex items-center gap-1">
+                            <button onclick="views.exportToPDF('month-sales-report-table', 'Month Sales Report - ${app.currentReportMonth}')" class="text-[10px] bg-purple-100 text-purple-700 px-3 py-1 rounded-lg hover:bg-purple-200 transition-all flex items-center gap-1">
                                 <i class="fa-solid fa-file-pdf"></i> Download PDF
                             </button>
                          </span>

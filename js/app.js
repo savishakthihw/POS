@@ -437,6 +437,12 @@ window.app = {
             }
         }
 
+        // --- NEW: Daily CSV Reports ---
+        const shouldDownloadCsvs = confirm('📊 DAILY REPORTS\n\nWould you like to download Today\'s CSV Reports (Sales, Stock-in, Inventory, Purchases, Expenses) before turning off?');
+        if (shouldDownloadCsvs && window.views && views.downloadDailyCSVs) {
+            await views.downloadDailyCSVs();
+        }
+
         // --- NEW: Incremental Cloud Sync on Shutdown ---
         if (navigator.onLine) {
             const shouldCloudSync = confirm('☁️ CLOUD SYNC\n\nWould you like to UPLOAD new data to the Cloud before turning off?');
