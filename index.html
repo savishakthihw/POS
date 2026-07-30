@@ -179,6 +179,11 @@
                     <i class="fa-solid fa-cart-shopping w-5 group-hover:text-amber-400 transition-colors"></i>
                     <span class="font-bold">Purchases</span>
                 </a>
+                <a href="#" onclick="app.navigate('credit_settlement')"
+                    class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-teal-400">
+                    <i class="fa-solid fa-hand-holding-dollar w-5 group-hover:text-teal-300 transition-colors"></i>
+                    <span class="font-bold">Credit Settlement</span>
+                </a>
                 <a href="#" onclick="app.navigate('inventory')"
                     class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-white/10 group text-violet-400">
                     <i class="fa-solid fa-warehouse w-5 group-hover:text-violet-300 transition-colors"></i>
@@ -508,6 +513,7 @@
                 <div id="view-archive" class="view-section hidden animate-fade-in"></div>
                 <div id="view-expenses" class="view-section hidden animate-fade-in"></div>
                 <div id="view-purchases" class="view-section hidden animate-fade-in"></div>
+                <div id="view-credit_settlement" class="view-section hidden animate-fade-in"></div>
                 <div id="view-settings" class="view-section hidden animate-fade-in"></div>
                 <div id="view-reports" class="view-section hidden animate-fade-in"></div>
 
@@ -1027,6 +1033,56 @@
                         class="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
                     <button type="submit"
                         class="px-4 py-2 text-sm font-bold text-white bg-blue-500 hover:bg-blue-600 rounded-xl transition-colors shadow-sm">Update Prices</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Credit Settlement Modal -->
+    <div id="credit-settlement-modal"
+        class="fixed inset-0 bg-black/50 z-[120] hidden flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl transform transition-all">
+            <div class="flex justify-between items-center mb-5 pb-3 border-b border-gray-100">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2" id="credit-settlement-modal-title">
+                    <i class="fa-solid fa-hand-holding-dollar text-teal-600"></i> New Credit Settlement
+                </h3>
+                <button onclick="document.getElementById('credit-settlement-modal').classList.add('hidden')"
+                    class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <form id="credit-settlement-form" class="space-y-4" onsubmit="views.saveCreditSettlement(event)">
+                <input type="hidden" id="settlement-id">
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Date Settled</label>
+                    <input type="date" id="settlement-date"
+                        class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 font-medium"
+                        required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Supplier Name</label>
+                    <input type="text" id="settlement-supplier" list="settlement-supplier-list"
+                        class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 font-medium"
+                        placeholder="Enter or select supplier..." required autocomplete="off">
+                    <datalist id="settlement-supplier-list"></datalist>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Amount (Rs.)</label>
+                    <input type="number" step="0.01" min="0.01" id="settlement-amount"
+                        class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 font-bold text-teal-600"
+                        placeholder="0.00" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Note / Remarks</label>
+                    <textarea id="settlement-note" rows="3"
+                        class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 font-medium"
+                        placeholder="Optional remarks (e.g. Cheque No / Cash settlement info)..."></textarea>
+                </div>
+                <div class="flex justify-end gap-3 pt-3 border-t border-gray-100">
+                    <button type="button" onclick="document.getElementById('credit-settlement-modal').classList.add('hidden')"
+                        class="px-5 py-2.5 text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">Cancel</button>
+                    <button type="submit"
+                        class="px-6 py-2.5 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-lg shadow-teal-200 transition-all">Save Settlement</button>
                 </div>
             </form>
         </div>

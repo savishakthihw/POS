@@ -2820,7 +2820,7 @@ var views = window.views = {
             await views.backupData();
             utils.showNotification('Safety backup created. Processing data...', 'info');
 
-            await db.transaction('rw', db.sales, db.sales_archive, db.stock_in, db.stock_in_archive, db.audit_logs, db.purchases, db.purchases_archive, db.expenses, db.expenses_archive, async () => {
+            await db.transaction('rw', db.sales, db.sales_archive, db.stock_in, db.stock_in_archive, db.audit_logs, db.purchases, db.purchases_archive, db.expenses, db.expenses_archive, db.credit_settlements, db.credit_settlements_archive, async () => {
                 const endDate = `${year}-12-31T23:59:59`;
 
                 // Fetch ALL historical records up to the end of the selected year
@@ -2828,8 +2828,9 @@ var views = window.views = {
                 const allPastStockIn = await db.stock_in.where('date').belowOrEqual(endDate).toArray();
                 const allPastPurchases = await db.purchases.where('date').belowOrEqual(endDate).toArray();
                 const allPastExpenses = await db.expenses.where('date').belowOrEqual(endDate).toArray();
+                const allPastCreditSettlements = await db.credit_settlements.where('dateSettled').belowOrEqual(endDate.substring(0, 10)).toArray();
 
-                if (allPastSales.length === 0 && allPastStockIn.length === 0 && allPastPurchases.length === 0 && allPastExpenses.length === 0) {
+                if (allPastSales.length === 0 && allPastStockIn.length === 0 && allPastPurchases.length === 0 && allPastExpenses.length === 0 && allPastCreditSettlements.length === 0) {
                     throw new Error(`No records found to archive up to the end of ${year}.`);
                 }
 
@@ -2934,12 +2935,17 @@ var views = window.views = {
                     await db.expenses.bulkDelete(allPastExpenses.map(s => s.id));
                 }
 
+                if (allPastCreditSettlements.length > 0) {
+                    await db.credit_settlements_archive.bulkAdd(archiveData(allPastCreditSettlements));
+                    await db.credit_settlements.bulkDelete(allPastCreditSettlements.map(s => s.id));
+                }
+
                 // --- 3. INSERT NEW BALANCES ---
                 if (carryOverRecords.length > 0) {
                     await db.stock_in.bulkAdd(carryOverRecords);
                 }
 
-                await utils.logAction('Annual Closing', `Archived up to ${year}: ${allPastSales.length} Sales, ${allPastStockIn.length} Stock-In, ${allPastPurchases.length} Purchases, ${allPastExpenses.length} Expenses.`);
+                await utils.logAction('Annual Closing', `Archived up to ${year}: ${allPastSales.length} Sales, ${allPastStockIn.length} Stock-In, ${allPastPurchases.length} Purchases, ${allPastExpenses.length} Expenses, ${allPastCreditSettlements.length} Settlements.`);
             });
 
             utils.showNotification(`Annual Closing for ${year} complete! System history has been consolidated.`, 'success');
@@ -7143,6 +7149,7 @@ var views = window.views = {
 
             const tables = [
                 'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 'purchases',
+                'credit_settlements', 'credit_settlements_archive',
                 'settings', 'held_bills', 'item_batches', 'audit_logs', 'users', 'sales_archive', 'stock_in_archive', 'purchases_archive', 'expenses_archive', 'closing_balances'
             ];
             
@@ -7487,11 +7494,13 @@ var views = window.views = {
                         db.audit_logs.clear(),
                         db.sales_archive.clear(),
                         db.stock_in_archive.clear(),
-                        db.closing_balances.clear()
+                        db.closing_balances.clear(),
+                        db.credit_settlements.clear(),
+                        db.credit_settlements_archive.clear()
                     ]);
 
                     // Restore data
-                    const { item_master, inventory, stock_in, sales, expenses, purchases, settings, held_bills, item_batches, audit_logs, users, sales_archive, stock_in_archive, closing_balances } = backup.data;
+                    const { item_master, inventory, stock_in, sales, expenses, purchases, settings, held_bills, item_batches, audit_logs, users, sales_archive, stock_in_archive, closing_balances, credit_settlements, credit_settlements_archive } = backup.data;
 
                     if (item_master?.length) await db.item_master.bulkPut(item_master);
                     if (inventory?.length) await db.inventory.bulkPut(inventory);
@@ -7507,6 +7516,8 @@ var views = window.views = {
                     if (sales_archive?.length) await db.sales_archive.bulkPut(sales_archive);
                     if (stock_in_archive?.length) await db.stock_in_archive.bulkPut(stock_in_archive);
                     if (closing_balances?.length) await db.closing_balances.bulkPut(closing_balances);
+                    if (credit_settlements?.length) await db.credit_settlements.bulkPut(credit_settlements);
+                    if (credit_settlements_archive?.length) await db.credit_settlements_archive.bulkPut(credit_settlements_archive);
                 });
 
                 utils.showNotification('Data applied. Finalizing system sync...', 'info');
@@ -7557,7 +7568,9 @@ var views = window.views = {
                     db.ghost_backups.clear(),
                     db.sales_archive.clear(),
                     db.stock_in_archive.clear(),
-                    db.closing_balances.clear()
+                    db.closing_balances.clear(),
+                    db.credit_settlements.clear(),
+                    db.credit_settlements_archive.clear()
                 ]);
 
                 // Try to delete the DB as well for a full purge (optional but safe now tables are empty)
@@ -8843,6 +8856,250 @@ var views = window.views = {
 
     recalculateInventory: async () => {
         return views.recalculateAllInventory();
+    },
+
+    // --- CREDIT SETTLEMENT SECTION ---
+    initCreditSettlements: async () => {
+        const currentMonth = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+        const container = document.getElementById('view-credit_settlement') || document.getElementById('view-credit-settlement');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="flex flex-col h-full gap-6">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100 gap-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                            <i class="fa-solid fa-hand-holding-dollar text-teal-600"></i> Credit Settlement
+                        </h3>
+                        <p class="text-sm text-gray-500">Track and manage credit payments settled with suppliers</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 items-center w-full md:w-auto">
+                        <div class="relative">
+                            <i class="fa-solid fa-calendar-days absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                            <input type="month" id="settlement-search-month" 
+                             class="pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-teal-500/20 shadow-sm font-medium"
+                             value="${currentMonth}"
+                             onchange="views.loadCreditSettlementsTable(this.value, document.getElementById('settlement-search-query')?.value)">
+                        </div>
+                        <div class="relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                            <input type="text" id="settlement-search-query" placeholder="Supplier / Note..." 
+                             class="pl-9 pr-3 py-2.5 w-48 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-teal-500/20 shadow-sm"
+                             oninput="views.loadCreditSettlementsTable(document.getElementById('settlement-search-month').value, this.value)">
+                        </div>
+                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.exportToPDF('credit-settlements-table', 'Credit Settlement Report')); } else { views.exportToPDF('credit-settlements-table', 'Credit Settlement Report'); }" class="px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition-all flex items-center gap-2 text-sm">
+                             <i class="fa-solid fa-file-pdf"></i> PDF
+                        </button>
+                        <button onclick="views.openCreditSettlementModal()" class="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl shadow-lg shadow-teal-200 transition-all flex items-center gap-2 text-sm">
+                             <i class="fa-solid fa-plus"></i> New Settlement
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex-1 flex flex-col">
+                     <div class="overflow-y-auto flex-1">
+                        <table id="credit-settlements-table" class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0 border-b border-gray-100">
+                                <tr>
+                                    <th class="px-4 py-3.5 w-32">Date Settled</th>
+                                    <th class="px-4 py-3.5">Supplier Name</th>
+                                    <th class="px-4 py-3.5 text-right w-44">Amount</th>
+                                    <th class="px-4 py-3.5">Note</th>
+                                    <th class="px-4 py-3.5 text-center w-36">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="credit-settlements-table-body" class="divide-y divide-gray-50">
+                                <tr><td colspan="5" class="text-center py-10 text-gray-400">Loading credit settlements...</td></tr>
+                            </tbody>
+                            <tfoot id="credit-settlements-table-foot" class="bg-teal-50/50 font-bold border-t-2 border-teal-100 text-gray-800 sticky bottom-0">
+                                <tr>
+                                    <td colspan="2" class="px-4 py-3.5 text-right uppercase tracking-wider text-xs text-teal-800">Monthly Total Settled:</td>
+                                    <td class="px-4 py-3.5 text-right text-base text-teal-700 font-black" id="settlement-monthly-total">Rs. 0.00</td>
+                                    <td colspan="2" class="px-4 py-3.5"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                     </div>
+                </div>
+            </div>
+        `;
+
+        views.loadCreditSettlementsTable(currentMonth);
+
+        const form = document.getElementById('credit-settlement-form');
+        if (form) form.onsubmit = views.saveCreditSettlement;
+    },
+
+    loadCreditSettlementsTable: async (month = '', search = '') => {
+        const tbody = document.getElementById('credit-settlements-table-body');
+        const totalCell = document.getElementById('settlement-monthly-total');
+        if (!tbody) return;
+
+        let items = await db.credit_settlements.orderBy('dateSettled').reverse().toArray();
+
+        if (month) {
+            items = items.filter(i => i.dateSettled && i.dateSettled.startsWith(month));
+        }
+
+        if (search) {
+            const q = search.toLowerCase();
+            items = items.filter(i => 
+                (i.supplierName && i.supplierName.toLowerCase().includes(q)) ||
+                (i.note && i.note.toLowerCase().includes(q))
+            );
+        }
+
+        let totalAmount = 0;
+
+        if (items.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-gray-400 font-medium">No credit settlements found.</td></tr>`;
+            if (totalCell) totalCell.innerText = 'Rs. 0.00';
+            return;
+        }
+
+        const rowsHtml = items.map(item => {
+            const amt = parseFloat(item.amount) || 0;
+            totalAmount += amt;
+
+            return `
+                <tr class="hover:bg-gray-50/80 transition-colors">
+                    <td class="px-4 py-3.5 font-medium text-gray-700">${item.dateSettled || '-'}</td>
+                    <td class="px-4 py-3.5 font-bold text-gray-900">${item.supplierName || '-'}</td>
+                    <td class="px-4 py-3.5 text-right font-black text-teal-600">Rs. ${amt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="px-4 py-3.5 text-gray-600 text-xs">${item.note || '-'}</td>
+                    <td class="px-4 py-3.5 text-center">
+                        <div class="flex justify-center gap-1">
+                            <button onclick="views.openCreditSettlementModal(${item.id})" 
+                                class="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit">
+                                <i class="fa-solid fa-pen-to-square text-xs"></i>
+                            </button>
+                            <button onclick="views.deleteCreditSettlement(${item.id})" 
+                                class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Delete">
+                                <i class="fa-solid fa-trash text-xs"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        tbody.innerHTML = rowsHtml;
+        if (totalCell) {
+            totalCell.innerText = `Rs. ${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+    },
+
+    openCreditSettlementModal: async (id = null) => {
+        const modal = document.getElementById('credit-settlement-modal');
+        const title = document.getElementById('credit-settlement-modal-title');
+        const form = document.getElementById('credit-settlement-form');
+        const datalist = document.getElementById('settlement-supplier-list');
+        if (!modal || !form) {
+            console.error('Credit Settlement modal or form not found in DOM');
+            return;
+        }
+
+        form.reset();
+        document.getElementById('settlement-id').value = '';
+        document.getElementById('settlement-date').value = new Date().toISOString().split('T')[0];
+
+        if (id) {
+            if (title) title.innerHTML = `<i class="fa-solid fa-pen-to-square text-teal-600"></i> Edit Credit Settlement`;
+        } else {
+            if (title) title.innerHTML = `<i class="fa-solid fa-hand-holding-dollar text-teal-600"></i> New Credit Settlement`;
+        }
+
+        // Show modal immediately
+        modal.classList.remove('hidden');
+
+        // Async fetch record if editing
+        if (id) {
+            try {
+                const record = await db.credit_settlements.get(id);
+                if (record) {
+                    document.getElementById('settlement-id').value = record.id;
+                    document.getElementById('settlement-date').value = record.dateSettled || '';
+                    document.getElementById('settlement-supplier').value = record.supplierName || '';
+                    document.getElementById('settlement-amount').value = record.amount || '';
+                    document.getElementById('settlement-note').value = record.note || '';
+                }
+            } catch (err) {
+                console.error('Error fetching credit settlement record:', err);
+            }
+        }
+
+        // Populate supplier autocomplete list from db in background safely
+        if (datalist) {
+            try {
+                const suppliers = new Set();
+                const [items, purchases, stockIns] = await Promise.all([
+                    db.item_master.toArray(),
+                    db.purchases.toArray(),
+                    db.stock_in.toArray()
+                ]);
+                items.forEach(i => i.supplierId && suppliers.add(i.supplierId));
+                purchases.forEach(p => p.supplierName && suppliers.add(p.supplierName));
+                stockIns.forEach(s => s.supplierId && suppliers.add(s.supplierId));
+                
+                datalist.innerHTML = Array.from(suppliers).map(s => `<option value="${s}">`).join('');
+            } catch (err) {
+                console.warn('Could not populate supplier datalist:', err);
+            }
+        }
+    },
+
+    saveCreditSettlement: async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('settlement-id').value;
+        const dateSettled = document.getElementById('settlement-date').value;
+        const supplierName = document.getElementById('settlement-supplier').value.trim();
+        const amount = parseFloat(document.getElementById('settlement-amount').value);
+        const note = document.getElementById('settlement-note').value.trim();
+
+        if (!dateSettled || !supplierName || isNaN(amount) || amount <= 0) {
+            utils.showNotification('Please fill in all required fields with a valid amount.', 'error');
+            return;
+        }
+
+        const data = {
+            dateSettled,
+            supplierName,
+            amount,
+            note,
+            updatedAt: new Date().toISOString()
+        };
+
+        try {
+            if (id) {
+                await db.credit_settlements.update(parseInt(id), data);
+                utils.showNotification('Credit Settlement updated successfully!', 'success');
+            } else {
+                await db.credit_settlements.add(data);
+                utils.showNotification('Credit Settlement recorded successfully!', 'success');
+            }
+
+            document.getElementById('credit-settlement-modal').classList.add('hidden');
+            const monthInput = document.getElementById('settlement-search-month');
+            const currentMonth = monthInput ? monthInput.value : dateSettled.substring(0, 7);
+            views.loadCreditSettlementsTable(currentMonth);
+        } catch (err) {
+            console.error('Failed to save credit settlement:', err);
+            utils.showNotification('Error saving settlement: ' + err.message, 'error');
+        }
+    },
+
+    deleteCreditSettlement: async (id) => {
+        if (!confirm('Are you sure you want to delete this credit settlement record?')) return;
+        try {
+            await db.credit_settlements.delete(id);
+            utils.showNotification('Credit settlement deleted.', 'info');
+            const monthInput = document.getElementById('settlement-search-month');
+            const searchInput = document.getElementById('settlement-search-query');
+            views.loadCreditSettlementsTable(monthInput ? monthInput.value : '', searchInput ? searchInput.value : '');
+        } catch (err) {
+            console.error('Failed to delete credit settlement:', err);
+            utils.showNotification('Error deleting settlement: ' + err.message, 'error');
+        }
     }
 };
 

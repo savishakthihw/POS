@@ -601,7 +601,7 @@ window.app = {
 
         document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
 
-        const targetView = document.getElementById(`view-${viewId}`);
+        const targetView = document.getElementById(`view-${viewId}`) || document.getElementById(`view-${viewId.replace(/_/g, '-')}`);
         if (targetView) {
             targetView.classList.remove('hidden');
 
@@ -624,6 +624,7 @@ window.app = {
                 archive: 'Archive',
                 expenses: 'Expense Management',
                 purchases: 'Purchase Management',
+                credit_settlement: 'Credit Settlement',
                 settings: 'System Settings',
                 reports: 'Business Reports'
             };
@@ -639,6 +640,7 @@ window.app = {
             if (viewId === 'archive' && window.views) window.views.initArchive(...initArgs);
             if (viewId === 'expenses' && window.views) window.views.initExpenses(...initArgs);
             if (viewId === 'purchases' && window.views) window.views.initPurchases(...initArgs);
+            if (viewId === 'credit_settlement' && window.views) window.views.initCreditSettlements(...initArgs);
             if (viewId === 'settings' && window.views) window.views.initSettings(...initArgs);
             if (viewId === 'reports' && window.views) window.views.initReports(...initArgs);
         }
@@ -667,7 +669,7 @@ window.app = {
     saveGhostBackup: async () => {
         try {
             // PERFORMANCE FIX: Only backup structural and active data. Exclude huge historical tables.
-            const tables = ['item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 'purchases', 'settings', 'held_bills', 'item_batches', 'users'];
+            const tables = ['item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 'purchases', 'credit_settlements', 'settings', 'held_bills', 'item_batches', 'users'];
             const data = {};
 
             await Promise.all(tables.map(async (table) => {
@@ -725,7 +727,7 @@ window.app = {
                     utils.showNotification('Restoring from ghost backup...', 'info');
                     const tables = Object.keys(snapshot.data);
 
-                    await db.transaction('rw', db.item_master, db.inventory, db.stock_in, db.sales, db.expenses, db.purchases, db.settings, db.held_bills, db.item_batches, db.audit_logs, db.users, db.sales_archive, db.stock_in_archive, async () => {
+                    await db.transaction('rw', db.item_master, db.inventory, db.stock_in, db.sales, db.expenses, db.purchases, db.credit_settlements, db.credit_settlements_archive, db.settings, db.held_bills, db.item_batches, db.audit_logs, db.users, db.sales_archive, db.stock_in_archive, async () => {
                         for (const table of tables) {
                             if (snapshot.data[table] && snapshot.data[table].length > 0) {
                                 await db[table].bulkAdd(snapshot.data[table]);
@@ -1268,6 +1270,7 @@ window.app = {
             case 'sales': views.loadSalesTable(q); break;
             case 'expenses': views.loadExpensesTable('', q); break; // Assuming loadExpensesTable can take search
             case 'purchases': views.loadPurchasesTable('', q); break; // Assuming loadPurchasesTable can take search
+            case 'credit_settlement': views.loadCreditSettlementsTable('', q); break;
         }
     },
 
@@ -1460,7 +1463,7 @@ window.app = {
         try {
             const syncTables = [
                 'item_master', 'inventory', 'stock_in', 'sales', 'expenses', 
-                'purchases', 'settings', 'item_batches', 'users', 'held_bills',
+                'purchases', 'credit_settlements', 'credit_settlements_archive', 'settings', 'item_batches', 'users', 'held_bills',
                 'sales_archive', 'stock_in_archive', 'purchases_archive', 'closing_balances', 'audit_logs'
             ];
 
