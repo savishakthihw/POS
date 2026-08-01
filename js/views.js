@@ -3638,6 +3638,7 @@ var views = window.views = {
 
         // Initialize Held Bills Table
         views.loadHeldBills();
+        views.loadCreditPendingBills();
 
         // Setup Custom Item Form Handler
         const customItemForm = document.getElementById('custom-item-form');
@@ -3889,6 +3890,164 @@ var views = window.views = {
         await db.held_bills.delete(id);
         views.loadHeldBills();
         utils.showNotification('Held bill discarded');
+    },
+
+    loadCreditPendingBills: async (month = '', search = '') => {
+        let container = document.getElementById('credit-pending-bills-section');
+        if (!container) {
+            const posView = document.getElementById('view-pos');
+            if (!posView) return;
+
+            const currentMonth = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+            month = month || currentMonth;
+
+            container = document.createElement('div');
+            container.id = 'credit-pending-bills-section';
+            container.className = 'mt-6 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden';
+            container.innerHTML = `
+                <div class="p-4 border-b border-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center bg-gray-50 gap-4">
+                    <h4 class="font-bold text-gray-800 flex items-center gap-2">
+                        <i class="fa-solid fa-clock text-blue-500"></i> Credit Bill Pending
+                    </h4>
+                    <div class="flex flex-wrap gap-2 items-center w-full md:w-auto">
+                        <input type="month" id="credit-pending-search-month" 
+                         class="px-3 py-1.5 bg-white border border-gray-200 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 font-medium"
+                         value="${currentMonth}"
+                         onchange="views.loadCreditPendingBills(this.value, document.getElementById('credit-pending-search-query')?.value)">
+                        <input type="text" id="credit-pending-search-query" placeholder="Customer Name..." 
+                         class="px-3 py-1.5 bg-white border border-gray-200 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                         oninput="views.loadCreditPendingBills(document.getElementById('credit-pending-search-month').value, this.value)">
+                        <span class="text-xs text-gray-400 bg-white px-3 py-1.5 rounded-full border border-gray-200" id="credit-pending-count">0 Records</span>
+                    </div>
+                </div>
+                <div class="overflow-x-auto max-h-[400px]">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-gray-50 text-xs text-gray-400 uppercase tracking-wider sticky top-0 border-b border-gray-100">
+                            <tr>
+                                <th class="px-6 py-3 bg-gray-50">Time</th>
+                                <th class="px-6 py-3 bg-gray-50">Customer Ref</th>
+                                <th class="px-6 py-3 bg-gray-50 text-center">Items</th>
+                                <th class="px-6 py-3 bg-gray-50 text-right">Total Amount</th>
+                                <th class="px-6 py-3 bg-gray-50 text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="credit-pending-bills-body" class="divide-y divide-gray-50">
+                        </tbody>
+                        <tfoot class="bg-blue-50/50 font-bold border-t border-blue-100 text-gray-800 sticky bottom-0">
+                            <tr>
+                                <td colspan="3" class="px-6 py-3 text-right uppercase tracking-wider text-xs text-blue-800 bg-blue-50/90 backdrop-blur">Total Pending:</td>
+                                <td class="px-6 py-3 text-right text-sm text-blue-700 font-black bg-blue-50/90 backdrop-blur" id="credit-pending-total">Rs. 0.00</td>
+                                <td class="px-6 py-3 bg-blue-50/90 backdrop-blur"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            `;
+            posView.appendChild(container);
+        }
+
+        const tbody = document.getElementById('credit-pending-bills-body');
+        const countBadge = document.getElementById('credit-pending-count');
+        const totalCell = document.getElementById('credit-pending-total');
+
+        let pendingBills = await db.credit_pending_bills.orderBy('timestamp').reverse().toArray();
+
+        if (month) {
+            pendingBills = pendingBills.filter(b => {
+                const d = new Date(b.timestamp);
+                const mStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+                return mStr === month;
+            });
+        }
+
+        if (search) {
+            const q = search.toLowerCase();
+            pendingBills = pendingBills.filter(b => 
+                (b.customerName || '').toLowerCase().includes(q)
+            );
+        }
+
+        if (countBadge) countBadge.innerText = `${pendingBills.length} Records`;
+
+        let totalAmount = 0;
+
+        if (pendingBills.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-gray-400 italic">No credit pending bills currently</td></tr>`;
+            if (totalCell) totalCell.innerText = 'Rs. 0.00';
+            return;
+        }
+
+        tbody.innerHTML = pendingBills.map(bill => {
+            totalAmount += bill.total || 0;
+            return `
+            <tr class="hover:bg-blue-50 transition-colors">
+                <td class="px-6 py-4 text-gray-500 font-mono text-xs">
+                    ${new Date(bill.timestamp).toLocaleTimeString()}
+                    <div class="text-[10px] text-gray-400">${new Date(bill.timestamp).toLocaleDateString()}</div>
+                </td>
+                <td class="px-6 py-4 font-bold text-gray-800">${bill.customerName || 'Walk-in Customer'}</td>
+                <td class="px-6 py-4 text-center">
+                    <span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">${bill.itemCount}</span>
+                </td>
+                <td class="px-6 py-4 text-right font-mono font-bold text-indigo-600">${utils.formatCurrency(bill.total)}</td>
+                <td class="px-6 py-4 text-center space-x-2">
+                    <button onclick="views.restoreCreditPendingBill(${bill.id})" class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                        <i class="fa-solid fa-play mr-1"></i> Resume
+                    </button>
+                    <button onclick="views.removeCreditPendingBill(${bill.id})" class="bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            `;
+        }).join('');
+        
+        if (totalCell) totalCell.innerText = utils.formatCurrency(totalAmount);
+    },
+
+    restoreCreditPendingBill: async (id) => {
+        if (window.posCart.length > 0) {
+            if (!confirm('Current cart is not empty. Replace it with credit pending bill?')) return;
+        }
+
+        const bill = await db.credit_pending_bills.get(id);
+        if (!bill) {
+            utils.showNotification('Bill not found', 'error');
+            views.loadCreditPendingBills();
+            return;
+        }
+
+        // Restore Cart
+        window.posCart = bill.cartData.cart;
+
+        // Restore Discount if saved
+        const discountInput = document.getElementById('bill-discount');
+        if (discountInput) {
+            discountInput.value = bill.cartData.discount || '';
+        }
+
+        // Restore Customer if saved
+        const customerInput = document.getElementById('pos-customer');
+        if (customerInput) {
+            customerInput.value = bill.cartData.customer || bill.customerName || '';
+        }
+
+        // Remove from credit pending bills
+        await db.credit_pending_bills.delete(id);
+
+        // Optional: Pre-select Credit payment method? The user said "aluth bill ekak widiyata sale eka add karanda puluwan", 
+        // usually they will pay cash when resuming. So leaving it as Cash is better.
+
+        views.renderCart();
+        views.loadCreditPendingBills();
+        utils.showNotification('Credit Pending Bill Resumed Successfully');
+    },
+
+    removeCreditPendingBill: async (id) => {
+        if (!confirm('Delete this credit pending bill permanently?')) return;
+        await db.credit_pending_bills.delete(id);
+        views.loadCreditPendingBills();
+        utils.showNotification('Credit pending bill discarded');
     },
 
     addToCart: async (itemId) => {
@@ -4443,6 +4602,65 @@ var views = window.views = {
         }
     },
 
+    holdCreditBill: async () => {
+        if (window.posCart.length === 0) {
+            utils.showNotification('Cart is empty', 'error');
+            return;
+        }
+
+        const customerInput = document.getElementById('pos-customer');
+        let customerName = customerInput ? customerInput.value.trim() : '';
+        if (!customerName || customerName.toLowerCase() === 'walk-in') {
+            customerName = prompt('Enter Customer Name for Credit Bill:', '');
+            if (customerName === null) return; // Cancelled
+        }
+
+        const subtotal = window.posCart.reduce((sum, i) => sum + i.total, 0);
+        const discount = parseFloat(document.getElementById('bill-discount').value) || 0;
+        const total = subtotal - discount;
+
+        const billData = {
+            timestamp: Date.now(),
+            customerName: customerName || 'Walk-in',
+            itemCount: window.posCart.reduce((acc, item) => acc + item.qty, 0),
+            total: total,
+            cartData: {
+                cart: window.posCart,
+                discount: discount,
+                customer: customerName
+            }
+        };
+
+        try {
+            await db.credit_pending_bills.add(billData);
+
+            // Clear current cart
+            window.posCart = [];
+            const discountInput = document.getElementById('bill-discount');
+            if (discountInput) discountInput.value = '';
+
+            const paidInput = document.getElementById('bill-paid');
+            if (paidInput) paidInput.value = '';
+            document.getElementById('bill-balance').innerText = 'Rs. 0.00';
+            if (customerInput) customerInput.value = '';
+
+            // Reset payment method to Cash
+            const cashRadio = document.querySelector('input[name="payment-method"][value="Cash"]');
+            if (cashRadio) {
+                cashRadio.checked = true;
+                cashRadio.dispatchEvent(new Event('change'));
+            }
+
+            views.renderCart();
+            views.loadCreditPendingBills();
+            utils.showNotification('Credit Bill saved to pending', 'success');
+        } catch (err) {
+            console.error('Hold Credit Bill Error:', err);
+            utils.showNotification('Failed to save credit bill', 'error');
+        }
+    },
+
+
     processCheckout: async (shouldPrint = true) => {
         console.log('Processing Checkout... Print:', shouldPrint);
         if (window.posCart.length === 0) {
@@ -4465,6 +4683,11 @@ var views = window.views = {
         const discount = parseFloat(document.getElementById('bill-discount').value) || 0;
         const finalTotal = subtotal - discount;
         const paymentMethod = document.querySelector('input[name="payment-method"]:checked')?.value || 'Cash';
+
+        if (paymentMethod === 'Credit') {
+            await views.holdCreditBill();
+            return;
+        }
 
         // NEW: Check for ADMIN custom date override
         const customDateInput = document.getElementById('pos-custom-date');
@@ -5082,6 +5305,12 @@ var views = window.views = {
                         <button id="archive-tab-expenses" onclick="views.switchArchiveTab('expenses')" class="px-6 py-2 rounded-lg text-xs font-bold transition-all text-gray-500 hover:text-gray-700">
                             <i class="fa-solid fa-money-bill-transfer mr-2"></i>Expenses Archive
                         </button>
+                        <button id="archive-tab-credit" onclick="views.switchArchiveTab('credit')" class="px-6 py-2 rounded-lg text-xs font-bold transition-all text-gray-500 hover:text-gray-700">
+                            <i class="fa-solid fa-hand-holding-dollar mr-2"></i>Credit Archive
+                        </button>
+                        <button id="archive-tab-reload" onclick="views.switchArchiveTab('reload')" class="px-6 py-2 rounded-lg text-xs font-bold transition-all text-gray-500 hover:text-gray-700">
+                            <i class="fa-solid fa-mobile-screen-button mr-2"></i>Reload Archive
+                        </button>
                     </div>
 
                     <!-- Controls -->
@@ -5132,7 +5361,7 @@ var views = window.views = {
 
     switchArchiveTab: (tab) => {
         app.activeArchiveTab = tab;
-        ['sales', 'stock', 'purchases', 'expenses'].forEach(t => {
+        ['sales', 'stock', 'purchases', 'expenses', 'credit', 'reload'].forEach(t => {
             const btn = document.getElementById(`archive-tab-${t}`);
             if (!btn) return;
             if (t === tab) {
@@ -5311,6 +5540,75 @@ var views = window.views = {
                     <td class="px-3 py-2 text-gray-700 font-medium">${s.description || '---'}</td>
                     <td class="px-3 py-2 text-right font-bold text-red-600">${utils.formatCurrencyNoCents(s.amount)}</td>
                     <td class="px-3 py-2 text-xs text-gray-500 uppercase">${s.user || '---'}</td>
+                    <td class="px-2 py-2 text-right"><span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[10px] font-black">${s.archiveYear}</span></td>
+                </tr>
+            `).join('');
+        } else if (tab === 'credit') {
+            thead.innerHTML = `
+                <tr>
+                    <th class="px-3 py-3">Date</th>
+                    <th class="px-3 py-3">Supplier Name</th>
+                    <th class="px-3 py-3">Note</th>
+                    <th class="px-3 py-3 text-right">Amount</th>
+                    <th class="px-2 py-3 text-right">Year</th>
+                </tr>
+            `;
+
+            archive = await db.credit_settlements_archive.orderBy('dateSettled').reverse().toArray();
+            if (year) {
+                const yearInt = parseInt(year);
+                archive = archive.filter(s => s.archiveYear === yearInt);
+            }
+
+            if (query) {
+                const q = query.toLowerCase();
+                archive = archive.filter(s => 
+                    String(s.supplierName).toLowerCase().includes(q) || 
+                    String(s.note).toLowerCase().includes(q)
+                );
+            }
+
+            tbody.innerHTML = archive.map(s => `
+                <tr class="hover:bg-gray-50/80 transition-all border-b border-gray-50">
+                    <td class="px-3 py-2 text-gray-500 text-xs">${utils.formatDate(s.dateSettled)}</td>
+                    <td class="px-3 py-2 font-bold text-gray-800">${s.supplierName || '---'}</td>
+                    <td class="px-3 py-2 text-gray-700 font-medium">${s.note || '---'}</td>
+                    <td class="px-3 py-2 text-right font-bold text-teal-600">${utils.formatCurrencyNoCents(s.amount)}</td>
+                    <td class="px-2 py-2 text-right"><span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[10px] font-black">${s.archiveYear}</span></td>
+                </tr>
+            `).join('');
+        } else if (tab === 'reload') {
+            thead.innerHTML = `
+                <tr>
+                    <th class="px-3 py-3">Date</th>
+                    <th class="px-3 py-3">Type</th>
+                    <th class="px-3 py-3 text-right">Amount</th>
+                    <th class="px-3 py-3 text-right">Commission</th>
+                    <th class="px-3 py-3 text-right">Total</th>
+                    <th class="px-2 py-3 text-right">Year</th>
+                </tr>
+            `;
+
+            archive = await db.reload_bills_archive.orderBy('date').reverse().toArray();
+            if (year) {
+                const yearInt = parseInt(year);
+                archive = archive.filter(s => s.archiveYear === yearInt);
+            }
+
+            if (query) {
+                const q = query.toLowerCase();
+                archive = archive.filter(s => 
+                    String(s.type).toLowerCase().includes(q)
+                );
+            }
+
+            tbody.innerHTML = archive.map(s => `
+                <tr class="hover:bg-gray-50/80 transition-all border-b border-gray-50">
+                    <td class="px-3 py-2 text-gray-500 text-xs">${utils.formatDate(s.date)}</td>
+                    <td class="px-3 py-2 font-bold text-gray-800"><span class="bg-fuchsia-50 text-fuchsia-600 px-2 py-1 rounded text-xs">${s.type || '---'}</span></td>
+                    <td class="px-3 py-2 text-right text-gray-500">${utils.formatCurrencyNoCents(s.amount)}</td>
+                    <td class="px-3 py-2 text-right text-emerald-600">${utils.formatCurrencyNoCents(s.commission)}</td>
+                    <td class="px-3 py-2 text-right font-bold text-fuchsia-600">${utils.formatCurrencyNoCents(s.total)}</td>
                     <td class="px-2 py-2 text-right"><span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full text-[10px] font-black">${s.archiveYear}</span></td>
                 </tr>
             `).join('');
@@ -7149,8 +7447,9 @@ var views = window.views = {
 
             const tables = [
                 'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 'purchases',
-                'credit_settlements', 'credit_settlements_archive',
-                'settings', 'held_bills', 'item_batches', 'audit_logs', 'users', 'sales_archive', 'stock_in_archive', 'purchases_archive', 'expenses_archive', 'closing_balances'
+                'credit_settlements', 'credit_settlements_archive', 'reload_bills', 'reload_bills_archive',
+                'settings', 'held_bills', 'credit_pending_bills', 'item_batches', 'audit_logs', 'users', 
+                'sales_archive', 'stock_in_archive', 'purchases_archive', 'expenses_archive', 'closing_balances'
             ];
             
             const backupHeader = `{"timestamp":"${new Date().toISOString()}","version":"23","data":{`;
@@ -7478,46 +7777,68 @@ var views = window.views = {
 
                 utils.showNotification('Restoring data...', 'info');
 
-                await db.transaction('rw', db.item_master, db.inventory, db.stock_in, db.sales, db.expenses, db.purchases, db.settings, db.held_bills, db.item_batches, db.audit_logs, db.users, db.sales_archive, db.stock_in_archive, db.closing_balances, async () => {
+                await db.transaction('rw', 
+                    db.item_master, db.inventory, db.stock_in, db.sales, db.quotations, db.expenses, db.purchases, 
+                    db.credit_settlements, db.credit_settlements_archive, db.reload_bills, db.reload_bills_archive,
+                    db.settings, db.held_bills, db.credit_pending_bills, db.item_batches, db.audit_logs, db.users, 
+                    db.sales_archive, db.stock_in_archive, db.purchases_archive, db.expenses_archive, db.closing_balances, 
+                    async () => {
                     // Clear all tables
                     await Promise.all([
                         db.item_master.clear(),
                         db.inventory.clear(),
                         db.stock_in.clear(),
                         db.sales.clear(),
+                        db.quotations.clear(),
                         db.expenses.clear(),
                         db.purchases.clear(),
+                        db.credit_settlements.clear(),
+                        db.credit_settlements_archive.clear(),
+                        db.reload_bills.clear(),
+                        db.reload_bills_archive.clear(),
                         db.settings.clear(),
                         db.held_bills.clear(),
+                        db.credit_pending_bills.clear(),
                         db.item_batches.clear(),
                         db.users.clear(),
                         db.audit_logs.clear(),
                         db.sales_archive.clear(),
                         db.stock_in_archive.clear(),
-                        db.closing_balances.clear(),
-                        db.credit_settlements.clear(),
-                        db.credit_settlements_archive.clear()
+                        db.purchases_archive.clear(),
+                        db.expenses_archive.clear(),
+                        db.closing_balances.clear()
                     ]);
 
                     // Restore data
-                    const { item_master, inventory, stock_in, sales, expenses, purchases, settings, held_bills, item_batches, audit_logs, users, sales_archive, stock_in_archive, closing_balances, credit_settlements, credit_settlements_archive } = backup.data;
+                    const { 
+                        item_master, inventory, stock_in, sales, quotations, expenses, purchases, 
+                        credit_settlements, credit_settlements_archive, reload_bills, reload_bills_archive,
+                        settings, held_bills, credit_pending_bills, item_batches, audit_logs, users, 
+                        sales_archive, stock_in_archive, purchases_archive, expenses_archive, closing_balances 
+                    } = backup.data;
 
                     if (item_master?.length) await db.item_master.bulkPut(item_master);
                     if (inventory?.length) await db.inventory.bulkPut(inventory);
                     if (stock_in?.length) await db.stock_in.bulkPut(stock_in);
                     if (sales?.length) await db.sales.bulkPut(sales);
+                    if (quotations?.length) await db.quotations.bulkPut(quotations);
                     if (expenses?.length) await db.expenses.bulkPut(expenses);
                     if (purchases?.length) await db.purchases.bulkPut(purchases);
+                    if (credit_settlements?.length) await db.credit_settlements.bulkPut(credit_settlements);
+                    if (credit_settlements_archive?.length) await db.credit_settlements_archive.bulkPut(credit_settlements_archive);
+                    if (reload_bills?.length) await db.reload_bills.bulkPut(reload_bills);
+                    if (reload_bills_archive?.length) await db.reload_bills_archive.bulkPut(reload_bills_archive);
                     if (settings?.length) await db.settings.bulkPut(settings);
                     if (held_bills?.length) await db.held_bills.bulkPut(held_bills);
+                    if (credit_pending_bills?.length) await db.credit_pending_bills.bulkPut(credit_pending_bills);
                     if (item_batches?.length) await db.item_batches.bulkPut(item_batches);
                     if (audit_logs?.length) await db.audit_logs.bulkPut(audit_logs);
                     if (users?.length) await db.users.bulkPut(users);
                     if (sales_archive?.length) await db.sales_archive.bulkPut(sales_archive);
                     if (stock_in_archive?.length) await db.stock_in_archive.bulkPut(stock_in_archive);
+                    if (purchases_archive?.length) await db.purchases_archive.bulkPut(purchases_archive);
+                    if (expenses_archive?.length) await db.expenses_archive.bulkPut(expenses_archive);
                     if (closing_balances?.length) await db.closing_balances.bulkPut(closing_balances);
-                    if (credit_settlements?.length) await db.credit_settlements.bulkPut(credit_settlements);
-                    if (credit_settlements_archive?.length) await db.credit_settlements_archive.bulkPut(credit_settlements_archive);
                 });
 
                 utils.showNotification('Data applied. Finalizing system sync...', 'info');
@@ -7625,13 +7946,14 @@ var views = window.views = {
                                     <th class="px-3 py-4 w-28 text-left">Date</th>
                                     <th class="px-3 py-4 w-28 text-left">Category</th>
                                     <th class="px-3 py-4 text-left">Description</th>
+                                    <th class="px-3 py-4 text-left w-24">Payment Type</th>
                                     <th class="px-3 py-4 text-left">User</th>
                                     <th class="px-3 py-4 text-right w-24">Amount</th>
                                     <th class="px-3 py-4 text-center w-28">Action</th>
                                 </tr>
                             </thead>
                             <tbody id="expenses-table-body">
-                                <tr><td colspan="6" class="text-center py-10 text-gray-400">Loading expenses...</td></tr>
+                                <tr><td colspan="7" class="text-center py-10 text-gray-400">Loading expenses...</td></tr>
                             </tbody>
                         </table>
                      </div>
@@ -7680,6 +8002,9 @@ var views = window.views = {
         document.getElementById('expense-category').value = exp.category;
         document.getElementById('expense-desc').value = exp.description || '';
         document.getElementById('expense-amount').value = exp.amount;
+        if(document.getElementById('expense-payment-type')) {
+            document.getElementById('expense-payment-type').value = exp.paymentType || 'Cash';
+        }
     },
 
     saveExpense: async (e) => {
@@ -7689,6 +8014,7 @@ var views = window.views = {
         const category = document.getElementById('expense-category').value;
         const desc = document.getElementById('expense-desc').value;
         const amount = parseFloat(document.getElementById('expense-amount').value);
+        const paymentType = document.getElementById('expense-payment-type') ? document.getElementById('expense-payment-type').value : 'Cash';
         const user = app.currentUser || 'System';
 
         if (!amount || amount <= 0) {
@@ -7696,7 +8022,7 @@ var views = window.views = {
             return;
         }
 
-        const data = { date, category, description: desc, amount, user };
+        const data = { date, category, description: desc, amount, paymentType, user };
 
         try {
             if (id) {
@@ -7743,7 +8069,7 @@ var views = window.views = {
         }
 
         if (expenses.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-12 text-gray-400">No expenses recorded.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-gray-400">No expenses recorded.</td></tr>`;
             return;
         }
 
@@ -7752,6 +8078,7 @@ var views = window.views = {
             <td class="px-3 py-4 font-mono text-xs text-gray-500">${e.date}</td>
             <td class="px-3 py-4"><span class="px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase bg-gray-100 text-gray-600">${e.category}</span></td>
             <td class="px-3 py-4 text-sm text-gray-600 truncate max-w-[200px]" title="${e.description || '-'}">${e.description || '-'}</td>
+            <td class="px-3 py-4 text-xs font-bold text-gray-500">${e.paymentType || 'Cash'}</td>
              <td class="px-3 py-4 text-[10px] text-gray-400 font-bold">${e.user || 'System'}</td>
             <td class="px-3 py-4 text-right font-bold text-red-500 font-mono">${utils.formatCurrency(e.amount)}</td>
             <td class="px-3 py-4 text-center whitespace-nowrap">
@@ -8320,7 +8647,7 @@ var views = window.views = {
                 <!-- NEW: Performance Charts & Summary Section -->
                 <div class="grid grid-cols-10 gap-6 mb-6">
                     <!-- 1. Daily Sales Summary (Left Side) -->
-                    <div class="col-span-10 lg:col-span-4 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+                    <div class="col-span-10 lg:col-span-10 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
                         <h4 class="font-bold text-lg mb-4 text-gray-800 flex justify-between items-center">
                             <span class="flex items-center gap-2 text-sm uppercase tracking-wide"><i class="fa-solid fa-table-list text-gray-400"></i> Daily Sales Summary (Latest)</span>
                             <div class="flex items-center gap-2 no-print">
@@ -8338,24 +8665,29 @@ var views = window.views = {
                             <table id="daily-sales-summary-report-table" class="w-full text-sm text-left">
                                 <thead class="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0">
                                     <tr>
-                                        <th class="px-2 py-2">Date</th>
+                                        <th class="px-2 py-2 w-16">Date</th>
                                         <th class="px-2 py-2 text-right">Sales</th>
                                         <th class="px-2 py-2 text-right">Profit</th>
-                                        <th class="px-2 py-2 text-right text-rose-500">Fees</th>
+                                        <th class="px-2 py-2 text-right">Fees</th>
                                         <th class="px-2 py-2 text-right">Margin</th>
+                                        <th class="px-2 py-2 text-right">Outstanding</th>
+                                        <th class="px-2 py-2 text-right">Credit Bill</th>
+                                        <th class="px-2 py-2 text-right">Expenses</th>
+                                        <th class="px-2 py-2 text-right">Purchase</th>
+                                        <th class="px-2 py-2 text-right">Sup. Settlement</th>
+                                        <th class="px-2 py-2 text-right">Reload/Bill</th>
                                     </tr>
                                 </thead>
                                 <tbody id="report-daily-summary-body" class="divide-y divide-gray-50">
-                                    <tr>
-                                        <td colspan="5" class="px-4 py-8 text-center text-gray-400 animate-pulse">Initializing table...</td>
-                                    </tr>
+                                    <tr><td colspan="11" class="px-4 py-8 text-center text-gray-400">Loading daily summary...</td></tr>
                                 </tbody>
+                                <tfoot id="report-daily-summary-foot" class="bg-gray-50 border-t-2 border-gray-200"></tfoot>
                             </table>
                         </div>
                     </div>
 
                     <!-- 2. Last 12 Months Performance (Right Side) -->
-                    <div class="col-span-10 lg:col-span-6 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col min-h-[400px]">
+                    <div class="col-span-10 lg:col-span-10 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col min-h-[400px]">
                         <h4 class="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide flex justify-between items-center">
                             <span class="flex items-center gap-2"><i class="fa-solid fa-chart-area text-blue-500"></i> Business Performance (Last 12 Months)</span>
                             <div class="flex gap-3">
@@ -8366,6 +8698,46 @@ var views = window.views = {
                         </h4>
                         <div class="flex-1 relative">
                             <canvas id="reportPerformance12MonthsChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 3. Daily Cash In/Out Summary -->
+                    <div class="col-span-10 lg:col-span-10 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+                        <h4 class="font-bold text-lg mb-4 text-gray-800 flex justify-between items-center">
+                            <span class="flex items-center gap-2 text-sm uppercase tracking-wide"><i class="fa-solid fa-money-bill-transfer text-emerald-500"></i> Daily Cash In/Out Summary</span>
+                            <div class="flex items-center gap-2 no-print">
+                                <input type="month" id="report-cash-summary-month"
+                                    class="text-[10px] font-bold px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer"
+                                    onchange="app.updateCashInOutSummaryTable()">
+                                <button
+                                    onclick="views.exportToPDF('daily-cash-summary-table', 'Daily Cash Summary ' + (document.getElementById('report-cash-summary-month').value ? '- ' + document.getElementById('report-cash-summary-month').value : '(Latest)'))"
+                                    class="text-[10px] bg-red-50 text-red-600 px-3 py-1 rounded-lg hover:bg-red-100 transition-all flex items-center gap-1">
+                                    <i class="fa-solid fa-file-pdf"></i> PDF
+                                </button>
+                            </div>
+                        </h4>
+                        <div class="overflow-x-auto flex-1">
+                            <table class="w-full text-sm text-left whitespace-nowrap" id="daily-cash-summary-table">
+                                <thead class="bg-gray-50/50 text-[10px] text-gray-400 uppercase tracking-wider sticky top-0 border-b border-gray-100">
+                                    <tr>
+                                        <th class="px-2 py-2 w-16 sticky left-0 bg-gray-50/95 backdrop-blur z-10">Date</th>
+                                        <th class="px-2 py-2 text-right">Cash Sale</th>
+                                        <th class="px-2 py-2 text-right">Outstanding Paid</th>
+                                        <th class="px-2 py-2 text-right">Reload/Bill Total</th>
+                                        <th class="px-2 py-2 text-right text-emerald-600 bg-emerald-50/50">Total Cash In</th>
+                                        <th class="px-2 py-2 text-right">Cash Purchase</th>
+                                        <th class="px-2 py-2 text-right">Cash Expenses</th>
+                                        <th class="px-2 py-2 text-right">Cash Settlement</th>
+                                        <th class="px-2 py-2 text-right text-red-600 bg-red-50/50">Total Cash Out</th>
+                                        <th class="px-2 py-2 text-right text-indigo-700 bg-indigo-50/50 font-black rounded-tr-lg">Total Cash In Hand</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="report-cash-summary-body" class="divide-y divide-gray-50">
+                                    <tr><td colspan="10" class="px-4 py-8 text-center text-gray-400">Loading cash flow summary...</td></tr>
+                                </tbody>
+                                <tfoot class="bg-gray-50 text-[10px] font-bold text-gray-600 sticky bottom-0" id="report-cash-summary-foot">
+                                </tfoot>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -8692,6 +9064,7 @@ var views = window.views = {
 
         if (app.isAdmin) {
             app.updateReportSummaryTable(); // Load the small table separately
+            app.updateCashInOutSummaryTable(); // Load Cash In/Out summary separately
             app.initReportCharts(); // Load charts separately
             
             // Defer the massive historical table calculation to avoid freezing/OOM
@@ -8903,17 +9276,18 @@ var views = window.views = {
                                 <tr>
                                     <th class="px-4 py-3.5 w-32">Date Settled</th>
                                     <th class="px-4 py-3.5">Supplier Name</th>
+                                    <th class="px-4 py-3.5 text-left">Payment Method</th>
                                     <th class="px-4 py-3.5 text-right w-44">Amount</th>
                                     <th class="px-4 py-3.5">Note</th>
                                     <th class="px-4 py-3.5 text-center w-36">Action</th>
                                 </tr>
                             </thead>
                             <tbody id="credit-settlements-table-body" class="divide-y divide-gray-50">
-                                <tr><td colspan="5" class="text-center py-10 text-gray-400">Loading credit settlements...</td></tr>
+                                <tr><td colspan="6" class="text-center py-10 text-gray-400">Loading credit settlements...</td></tr>
                             </tbody>
                             <tfoot id="credit-settlements-table-foot" class="bg-teal-50/50 font-bold border-t-2 border-teal-100 text-gray-800 sticky bottom-0">
                                 <tr>
-                                    <td colspan="2" class="px-4 py-3.5 text-right uppercase tracking-wider text-xs text-teal-800">Monthly Total Settled:</td>
+                                    <td colspan="3" class="px-4 py-3.5 text-right uppercase tracking-wider text-xs text-teal-800">Monthly Total Settled:</td>
                                     <td class="px-4 py-3.5 text-right text-base text-teal-700 font-black" id="settlement-monthly-total">Rs. 0.00</td>
                                     <td colspan="2" class="px-4 py-3.5"></td>
                                 </tr>
@@ -8952,7 +9326,7 @@ var views = window.views = {
         let totalAmount = 0;
 
         if (items.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-gray-400 font-medium">No credit settlements found.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-12 text-gray-400 font-medium">No credit settlements found.</td></tr>`;
             if (totalCell) totalCell.innerText = 'Rs. 0.00';
             return;
         }
@@ -8965,6 +9339,7 @@ var views = window.views = {
                 <tr class="hover:bg-gray-50/80 transition-colors">
                     <td class="px-4 py-3.5 font-medium text-gray-700">${item.dateSettled || '-'}</td>
                     <td class="px-4 py-3.5 font-bold text-gray-900">${item.supplierName || '-'}</td>
+                    <td class="px-4 py-3.5 text-xs text-gray-600 font-bold">${item.paymentMethod || 'Cash'}</td>
                     <td class="px-4 py-3.5 text-right font-black text-teal-600">Rs. ${amt.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="px-4 py-3.5 text-gray-600 text-xs">${item.note || '-'}</td>
                     <td class="px-4 py-3.5 text-center">
@@ -9020,6 +9395,9 @@ var views = window.views = {
                     document.getElementById('settlement-id').value = record.id;
                     document.getElementById('settlement-date').value = record.dateSettled || '';
                     document.getElementById('settlement-supplier').value = record.supplierName || '';
+                    if(document.getElementById('settlement-method')) {
+                        document.getElementById('settlement-method').value = record.paymentMethod || 'Cash';
+                    }
                     document.getElementById('settlement-amount').value = record.amount || '';
                     document.getElementById('settlement-note').value = record.note || '';
                 }
@@ -9053,6 +9431,7 @@ var views = window.views = {
         const id = document.getElementById('settlement-id').value;
         const dateSettled = document.getElementById('settlement-date').value;
         const supplierName = document.getElementById('settlement-supplier').value.trim();
+        const paymentMethod = document.getElementById('settlement-method') ? document.getElementById('settlement-method').value : 'Cash';
         const amount = parseFloat(document.getElementById('settlement-amount').value);
         const note = document.getElementById('settlement-note').value.trim();
 
@@ -9064,6 +9443,7 @@ var views = window.views = {
         const data = {
             dateSettled,
             supplierName,
+            paymentMethod,
             amount,
             note,
             updatedAt: new Date().toISOString()
@@ -9099,6 +9479,207 @@ var views = window.views = {
         } catch (err) {
             console.error('Failed to delete credit settlement:', err);
             utils.showNotification('Error deleting settlement: ' + err.message, 'error');
+        }
+    },
+
+
+
+    // --- RELOAD / BILL SECTION ---
+    initReloadBills: async () => {
+        const currentMonth = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+        const container = document.getElementById('view-reload_bill');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="flex flex-col h-full gap-6">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100 gap-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                            <i class="fa-solid fa-mobile-screen-button text-fuchsia-600"></i> Reload / Bill Management
+                        </h3>
+                        <p class="text-sm text-gray-500">Track mobile reloads, utility bills, and commissions</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2 items-center w-full md:w-auto">
+                        <div class="relative">
+                            <i class="fa-solid fa-calendar-days absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                            <input type="month" id="reload-search-month" 
+                             class="pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-fuchsia-500/20 shadow-sm font-medium"
+                             value="${currentMonth}"
+                             onchange="views.loadReloadBillsTable(this.value, document.getElementById('reload-search-query')?.value)">
+                        </div>
+                        <div class="relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                            <input type="text" id="reload-search-query" placeholder="Search Type..." 
+                             class="pl-9 pr-3 py-2.5 w-48 bg-gray-50 border border-gray-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-fuchsia-500/20 shadow-sm"
+                             oninput="views.loadReloadBillsTable(document.getElementById('reload-search-month').value, this.value)">
+                        </div>
+                        <button onclick="views.exportToPDF('reload-bills-table', 'Reload / Bill Summary - ' + (document.getElementById('reload-search-month').value || 'All Time'))" class="px-5 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 text-sm border border-red-100">
+                             <i class="fa-solid fa-file-pdf"></i> PDF
+                        </button>
+                        <button onclick="views.openReloadBillModal()" class="px-5 py-2.5 bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-bold rounded-xl shadow-lg shadow-fuchsia-200 transition-all flex items-center gap-2 text-sm">
+                             <i class="fa-solid fa-plus"></i> Add
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex-1 flex flex-col">
+                     <div class="overflow-y-auto flex-1">
+                        <table class="w-full text-sm text-left" id="reload-bills-table">
+                            <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wider sticky top-0 border-b border-gray-100">
+                                <tr>
+                                    <th class="px-6 py-4">Date</th>
+                                    <th class="px-6 py-4">Type</th>
+                                    <th class="px-6 py-4 text-right">Amount</th>
+                                    <th class="px-6 py-4 text-right">Commission</th>
+                                    <th class="px-6 py-4 text-right">Total</th>
+                                    <th class="px-6 py-4 text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reload-bills-body" class="divide-y divide-gray-50">
+                                <tr><td colspan="6" class="text-center py-10 text-gray-400">Loading records...</td></tr>
+                            </tbody>
+                            <tfoot class="bg-fuchsia-50/50 font-bold border-t-2 border-fuchsia-100 text-gray-800 sticky bottom-0">
+                                <tr>
+                                    <td colspan="4" class="px-6 py-4 text-right uppercase tracking-wider text-xs text-fuchsia-800">Total:</td>
+                                    <td class="px-6 py-4 text-right text-base text-fuchsia-700 font-black" id="reload-bills-total">Rs. 0.00</td>
+                                    <td class="px-6 py-4"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                     </div>
+                </div>
+            </div>
+        `;
+        views.loadReloadBillsTable(currentMonth);
+    },
+
+    loadReloadBillsTable: async (month = '', search = '') => {
+        const tbody = document.getElementById('reload-bills-body');
+        const totalCell = document.getElementById('reload-bills-total');
+        if (!tbody) return;
+
+        let records = await db.reload_bills.orderBy('date').reverse().toArray();
+
+        if (month) {
+            records = records.filter(r => r.date && r.date.startsWith(month));
+        }
+
+        if (search) {
+            const q = search.toLowerCase();
+            records = records.filter(r => (r.type || '').toLowerCase().includes(q));
+        }
+
+        let totalAmount = 0;
+
+        if (records.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-400 italic">No records found</td></tr>`;
+            if (totalCell) totalCell.innerText = 'Rs. 0.00';
+            return;
+        }
+
+        tbody.innerHTML = records.map(r => {
+            totalAmount += parseFloat(r.total) || 0;
+            return `
+            <tr class="hover:bg-fuchsia-50 transition-colors">
+                <td class="px-6 py-4 text-gray-500 font-mono text-xs">${r.date || '-'}</td>
+                <td class="px-6 py-4 font-bold text-gray-800">${r.type || '-'}</td>
+                <td class="px-6 py-4 text-right font-mono font-medium text-gray-600">${utils.formatCurrency(r.amount)}</td>
+                <td class="px-6 py-4 text-right font-mono font-bold text-green-600">${utils.formatCurrency(r.commission)}</td>
+                <td class="px-6 py-4 text-right font-mono font-black text-fuchsia-600">${utils.formatCurrency(r.total)}</td>
+                <td class="px-6 py-4 text-center space-x-2">
+                    <button onclick="views.openReloadBillModal(${r.id})" class="text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 p-1.5 rounded-lg transition-all" title="Edit">
+                        <i class="fa-solid fa-pen-to-square text-xs"></i>
+                    </button>
+                    <button onclick="views.deleteReloadBill(${r.id})" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-all" title="Delete">
+                        <i class="fa-solid fa-trash text-xs"></i>
+                    </button>
+                </td>
+            </tr>
+            `;
+        }).join('');
+        
+        if (totalCell) totalCell.innerText = utils.formatCurrency(totalAmount);
+    },
+
+    openReloadBillModal: async (id = null) => {
+        const modal = document.getElementById('reload-bill-modal');
+        const title = document.getElementById('reload-bill-modal-title');
+        const form = document.getElementById('reload-bill-form');
+        
+        form.reset();
+        document.getElementById('reload-id').value = '';
+        document.getElementById('reload-date').value = new Date().toISOString().split('T')[0];
+
+        if (id) {
+            title.innerHTML = `<i class="fa-solid fa-pen-to-square text-fuchsia-600"></i> Edit Record`;
+            const record = await db.reload_bills.get(id);
+            if (record) {
+                document.getElementById('reload-id').value = record.id;
+                document.getElementById('reload-date').value = record.date || '';
+                document.getElementById('reload-type').value = record.type || '';
+                document.getElementById('reload-amount').value = record.amount || '';
+                document.getElementById('reload-commission').value = record.commission || '';
+            }
+        } else {
+            title.innerHTML = `<i class="fa-solid fa-mobile-screen-button text-fuchsia-600"></i> New Reload / Bill`;
+        }
+
+        modal.classList.remove('hidden');
+    },
+
+    saveReloadBill: async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('reload-id').value;
+        const date = document.getElementById('reload-date').value;
+        const type = document.getElementById('reload-type').value.trim();
+        const amount = parseFloat(document.getElementById('reload-amount').value) || 0;
+        const commission = parseFloat(document.getElementById('reload-commission').value) || 0;
+        
+        const total = amount + commission;
+
+        if (!date || !type) {
+            utils.showNotification('Please fill in required fields.', 'error');
+            return;
+        }
+
+        const data = {
+            date,
+            type,
+            amount,
+            commission,
+            total
+        };
+
+        try {
+            if (id) {
+                await db.reload_bills.update(parseInt(id), data);
+                utils.showNotification('Record updated', 'success');
+            } else {
+                await db.reload_bills.add(data);
+                utils.showNotification('Record added', 'success');
+            }
+            document.getElementById('reload-bill-modal').classList.add('hidden');
+            
+            const monthInput = document.getElementById('reload-search-month');
+            const searchInput = document.getElementById('reload-search-query');
+            views.loadReloadBillsTable(monthInput ? monthInput.value : '', searchInput ? searchInput.value : '');
+        } catch (err) {
+            console.error('Save Reload Bill error:', err);
+            utils.showNotification('Failed to save record', 'error');
+        }
+    },
+
+    deleteReloadBill: async (id) => {
+        if (!confirm('Are you sure you want to delete this record?')) return;
+        try {
+            await db.reload_bills.delete(parseInt(id));
+            utils.showNotification('Record deleted', 'success');
+            const monthInput = document.getElementById('reload-search-month');
+            const searchInput = document.getElementById('reload-search-query');
+            views.loadReloadBillsTable(monthInput ? monthInput.value : '', searchInput ? searchInput.value : '');
+        } catch (err) {
+            console.error('Delete Reload Bill error:', err);
+            utils.showNotification('Failed to delete record', 'error');
         }
     }
 };

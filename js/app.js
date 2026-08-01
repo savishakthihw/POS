@@ -625,6 +625,7 @@ window.app = {
                 expenses: 'Expense Management',
                 purchases: 'Purchase Management',
                 credit_settlement: 'Credit Settlement',
+                reload_bill: 'Reload / Bill',
                 settings: 'System Settings',
                 reports: 'Business Reports'
             };
@@ -641,6 +642,7 @@ window.app = {
             if (viewId === 'expenses' && window.views) window.views.initExpenses(...initArgs);
             if (viewId === 'purchases' && window.views) window.views.initPurchases(...initArgs);
             if (viewId === 'credit_settlement' && window.views) window.views.initCreditSettlements(...initArgs);
+            if (viewId === 'reload_bill' && window.views) window.views.initReloadBills(...initArgs);
             if (viewId === 'settings' && window.views) window.views.initSettings(...initArgs);
             if (viewId === 'reports' && window.views) window.views.initReports(...initArgs);
         }
@@ -1012,24 +1014,115 @@ window.app = {
                 filterEl.value = today.substring(0, 7);
             }
             const currentMonth = (filterEl && filterEl.value) ? filterEl.value : today.substring(0, 7);
+            
+            // Fetch all required data for the month
             const monthSales = await db.sales.where('date').between(currentMonth, currentMonth + '\uffff').filter(s => s.paymentStatus !== 'Cancelled').toArray();
+            const settledSales = await db.sales.where('settledDate').between(currentMonth, currentMonth + '\uffff').filter(s => s.paymentStatus === 'Paid').toArray();
+            
+            const monthCreditSettlements = await db.credit_settlements.where('dateSettled').between(currentMonth, currentMonth + '\uffff').toArray();
+            const monthExpenses = await db.expenses.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
+            const monthPurchases = await db.purchases.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
+            const monthReloads = await db.reload_bills.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
+            const allCreditPending = await db.credit_pending_bills.toArray();
 
             const summaryMap = {};
+            const initDate = (date) => {
+                if (!summaryMap[date]) summaryMap[date] = { 
+                    sales: 0, profit: 0, fees: 0, margin: 0,
+                    outstanding: 0, creditBill: 0, expenses: 0, 
+                    purchase: 0, supSettlement: 0, reloadBill: 0 
+                };
+            };
+
+            const pendingByDateBill = {};
+
+            // Process Sales (Sales, Profit, Fees, Outstanding)
             monthSales.forEach(s => {
-                if (!summaryMap[s.date]) summaryMap[s.date] = { sales: 0, profit: 0, fees: 0 };
-                summaryMap[s.date].sales += s.total;
-                summaryMap[s.date].profit += s.profit;
+                initDate(s.date);
+                summaryMap[s.date].sales += (s.total || 0);
+                summaryMap[s.date].profit += (s.profit || 0);
                 summaryMap[s.date].fees += (s.bankFee || 0);
+                
+                if (s.paymentStatus === 'Pending') {
+                    const bNo = s.billNo || 'UNKNOWN';
+                    if (!pendingByDateBill[s.date]) pendingByDateBill[s.date] = {};
+                    if (!pendingByDateBill[s.date][bNo]) {
+                        pendingByDateBill[s.date][bNo] = { total: 0, paid: (s.paidAmount || 0) };
+                    }
+                    pendingByDateBill[s.date][bNo].total += (s.total || 0);
+                }
+            });
+
+            // Calculate Outstanding = Outstanding Payments Table (unpaid credit sales)
+            for (const dateKey in pendingByDateBill) {
+                for (const bNo in pendingByDateBill[dateKey]) {
+                    const b = pendingByDateBill[dateKey][bNo];
+                    summaryMap[dateKey].outstanding += (b.total - b.paid);
+                }
+            }
+
+            // Process Credit Bill Pending Table (Drafts)
+            allCreditPending.forEach(b => {
+                if (b.timestamp) {
+                    const dateObj = new Date(b.timestamp);
+                    const dateKey = dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
+                    const mStr = dateKey.substring(0, 7);
+                    if (mStr === currentMonth) {
+                        initDate(dateKey);
+                        summaryMap[dateKey].creditBill += (b.total || 0);
+                    }
+                }
+            });
+
+            // Process Supplier Credit Settlements
+            monthCreditSettlements.forEach(s => {
+                initDate(s.dateSettled);
+                summaryMap[s.dateSettled].supSettlement += (s.amount || 0);
+            });
+
+            // Process Expenses
+            monthExpenses.forEach(e => {
+                initDate(e.date);
+                summaryMap[e.date].expenses += (e.amount || 0);
+            });
+
+            // Process Purchases
+            monthPurchases.forEach(p => {
+                initDate(p.date);
+                summaryMap[p.date].purchase += (p.totalBill || 0);
+            });
+
+            // Process Reload/Bills
+            monthReloads.forEach(r => {
+                initDate(r.date);
+                summaryMap[r.date].reloadBill += (r.total || 0);
             });
 
             const sortedDays = Object.keys(summaryMap).sort().reverse();
             const summaryTable = document.getElementById('report-daily-summary-body');
+            const summaryTableFoot = document.getElementById('report-daily-summary-foot');
+            
+            let gSales = 0, gProfit = 0, gFees = 0, gOut = 0, gCredit = 0;
+            let gExp = 0, gPurch = 0, gSup = 0, gReload = 0;
+
             if (summaryTable) {
                 summaryTable.innerHTML = sortedDays.map(date => {
-                    const sales = summaryMap[date].sales;
-                    const profit = summaryMap[date].profit;
-                    const fees = summaryMap[date].fees;
+                    const row = summaryMap[date];
+                    const sales = row.sales;
+                    const profit = row.profit;
+                    const fees = row.fees;
                     const margin = sales > 0 ? (profit / sales) * 100 : 0;
+                    
+                    gSales += sales;
+                    gProfit += profit;
+                    gFees += fees;
+                    gOut += row.outstanding;
+                    gCredit += row.creditBill;
+                    gExp += row.expenses;
+                    gPurch += row.purchase;
+                    gSup += row.supSettlement;
+                    gReload += row.reloadBill;
+                    
                     return `
                         <tr class="border-b hover:bg-gray-50 transition-colors">
                             <td class="px-2 py-1.5 font-bold text-gray-700 font-mono text-xs">${date.split('-')[2]}/${date.split('-')[1]}</td>
@@ -1037,12 +1130,195 @@ window.app = {
                             <td class="px-2 py-1.5 font-bold text-emerald-600 text-right text-xs">${utils.formatCurrency(profit)}</td>
                             <td class="px-2 py-1.5 font-bold text-rose-600 text-right text-xs">${fees > 0 ? '-' + utils.formatCurrency(fees) : '-'}</td>
                             <td class="px-2 py-1.5 font-bold text-purple-600 text-right text-xs">${margin.toFixed(1)}%</td>
+                            <td class="px-2 py-1.5 font-mono text-gray-600 text-right text-xs">${utils.formatCurrency(row.outstanding)}</td>
+                            <td class="px-2 py-1.5 font-mono text-amber-600 text-right text-xs">${utils.formatCurrency(row.creditBill)}</td>
+                            <td class="px-2 py-1.5 font-mono text-red-500 text-right text-xs">${utils.formatCurrency(row.expenses)}</td>
+                            <td class="px-2 py-1.5 font-mono text-blue-600 text-right text-xs">${utils.formatCurrency(row.purchase)}</td>
+                            <td class="px-2 py-1.5 font-mono text-orange-500 text-right text-xs">${utils.formatCurrency(row.supSettlement)}</td>
+                            <td class="px-2 py-1.5 font-mono text-fuchsia-600 text-right text-xs">${utils.formatCurrency(row.reloadBill)}</td>
                         </tr>
                     `;
-                }).join('') || '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">No sales found for the selected period</td></tr>';
+                }).join('') || '<tr><td colspan="11" class="px-4 py-8 text-center text-gray-400">No data found for the selected period</td></tr>';
+            }
+
+            if (summaryTableFoot && sortedDays.length > 0) {
+                const gMargin = gSales > 0 ? (gProfit / gSales) * 100 : 0;
+                summaryTableFoot.innerHTML = `
+                    <tr>
+                        <td class="px-2 py-3 text-right uppercase tracking-wider text-gray-800 bg-gray-100 border-t-2 border-gray-300 font-bold text-xs">Total</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-indigo-800 text-xs">${utils.formatCurrency(gSales)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-emerald-700 text-xs">${utils.formatCurrency(gProfit)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-rose-700 text-xs">${gFees > 0 ? '-' + utils.formatCurrency(gFees) : '-'}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-purple-700 text-xs">${gMargin.toFixed(1)}%</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-gray-800 text-xs">${utils.formatCurrency(gOut)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-amber-700 text-xs">${utils.formatCurrency(gCredit)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-red-600 text-xs">${utils.formatCurrency(gExp)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-blue-700 text-xs">${utils.formatCurrency(gPurch)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-orange-600 text-xs">${utils.formatCurrency(gSup)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-fuchsia-700 text-xs">${utils.formatCurrency(gReload)}</td>
+                    </tr>
+                `;
+            } else if (summaryTableFoot) {
+                summaryTableFoot.innerHTML = '';
             }
         } catch (e) {
             console.error('Report summary update failed:', e);
+        }
+    },
+
+    updateCashInOutSummaryTable: async () => {
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const filterEl = document.getElementById('report-cash-summary-month');
+            if (filterEl && !filterEl.value) {
+                filterEl.value = today.substring(0, 7);
+            }
+            const currentMonth = (filterEl && filterEl.value) ? filterEl.value : today.substring(0, 7);
+            
+            // Fetch all required data for the month
+            const monthSales = await db.sales.where('date').between(currentMonth, currentMonth + '\uffff').filter(s => s.paymentStatus !== 'Cancelled').toArray();
+            const settledSales = await db.sales.where('settledDate').between(currentMonth, currentMonth + '\uffff').filter(s => s.paymentStatus === 'Paid').toArray();
+            const monthCreditSettlements = await db.credit_settlements.where('dateSettled').between(currentMonth, currentMonth + '\uffff').toArray();
+            const monthExpenses = await db.expenses.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
+            const monthPurchases = await db.purchases.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
+            const monthReloads = await db.reload_bills.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
+
+            const cashMap = {};
+            const initDate = (date) => {
+                if (!cashMap[date]) cashMap[date] = { 
+                    cashSale: 0, outstandingPaid: 0, reloadTotal: 0, 
+                    cashPurchase: 0, cashExpenses: 0, cashSettlement: 0 
+                };
+            };
+
+            // Cash Sales
+            monthSales.forEach(s => {
+                initDate(s.date);
+                if (s.method === 'Cash' && s.paymentStatus !== 'Pending') {
+                    cashMap[s.date].cashSale += (s.total || 0);
+                } else if (s.cashAmount) {
+                    cashMap[s.date].cashSale += s.cashAmount; // For split payments or partial cash
+                }
+            });
+
+            // Outstanding Paid
+            const settledByDateBill = {};
+            settledSales.forEach(s => {
+                const dateKey = (s.settledDate || '').split('T')[0];
+                if (!dateKey) return;
+                const bNo = s.billNo || 'UNKNOWN';
+                
+                if (!settledByDateBill[dateKey]) settledByDateBill[dateKey] = {};
+                if (!settledByDateBill[dateKey][bNo]) {
+                    settledByDateBill[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0) };
+                }
+                settledByDateBill[dateKey][bNo].total += (s.total || 0);
+            });
+
+            for (const dateKey in settledByDateBill) {
+                initDate(dateKey);
+                for (const bNo in settledByDateBill[dateKey]) {
+                    const b = settledByDateBill[dateKey][bNo];
+                    const due = b.total - b.paid;
+                    if (due > 0) {
+                        cashMap[dateKey].outstandingPaid += due;
+                    }
+                }
+            }
+
+            // Daily Reload/Bill Total
+            monthReloads.forEach(r => {
+                initDate(r.date);
+                cashMap[r.date].reloadTotal += (r.total || 0);
+            });
+
+            // Cash Expenses (Assuming all expenses are cash unless specified, but schema has no method. We assume all cash for expenses as per user request)
+            monthExpenses.forEach(e => {
+                initDate(e.date);
+                cashMap[e.date].cashExpenses += (e.amount || 0);
+            });
+
+            // Cash Purchase
+            monthPurchases.forEach(p => {
+                initDate(p.date);
+                if (p.method === 'Cash') {
+                    cashMap[p.date].cashPurchase += (p.paidAmount || p.totalBill || 0);
+                }
+            });
+
+            // Cash Credit Settlement
+            monthCreditSettlements.forEach(s => {
+                initDate(s.dateSettled);
+                if (!s.paymentMethod || s.paymentMethod === 'Cash') {
+                    cashMap[s.dateSettled].cashSettlement += (s.amount || 0);
+                }
+            });
+
+            const sortedDays = Object.keys(cashMap).sort().reverse();
+            const tbody = document.getElementById('report-cash-summary-body');
+            const tfoot = document.getElementById('report-cash-summary-foot');
+            
+            let grandCashSale = 0, grandOutPaid = 0, grandReload = 0, grandCashIn = 0;
+            let grandPurchase = 0, grandExpenses = 0, grandSettlement = 0, grandCashOut = 0;
+            let grandInHand = 0;
+
+            if (tbody) {
+                tbody.innerHTML = sortedDays.map(date => {
+                    const row = cashMap[date];
+                    
+                    const cashIn = row.cashSale + row.outstandingPaid + row.reloadTotal;
+                    const cashOut = row.cashPurchase + row.cashExpenses + row.cashSettlement;
+                    const cashInHand = cashIn - cashOut;
+
+                    grandCashSale += row.cashSale;
+                    grandOutPaid += row.outstandingPaid;
+                    grandReload += row.reloadTotal;
+                    grandCashIn += cashIn;
+                    
+                    grandPurchase += row.cashPurchase;
+                    grandExpenses += row.cashExpenses;
+                    grandSettlement += row.cashSettlement;
+                    grandCashOut += cashOut;
+                    
+                    grandInHand += cashInHand;
+
+                    return `
+                        <tr class="border-b hover:bg-gray-50 transition-colors">
+                            <td class="px-2 py-2 font-bold text-gray-700 font-mono text-xs sticky left-0 bg-white/95 backdrop-blur shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] z-0">${date.split('-')[2]}/${date.split('-')[1]}</td>
+                            <td class="px-2 py-2 font-mono text-right text-xs text-gray-600">${utils.formatCurrency(row.cashSale)}</td>
+                            <td class="px-2 py-2 font-mono text-right text-xs text-blue-600">${utils.formatCurrency(row.outstandingPaid)}</td>
+                            <td class="px-2 py-2 font-mono text-right text-xs text-fuchsia-600">${utils.formatCurrency(row.reloadTotal)}</td>
+                            <td class="px-2 py-2 font-mono text-right text-xs font-bold text-emerald-600 bg-emerald-50/30">${utils.formatCurrency(cashIn)}</td>
+                            <td class="px-2 py-2 font-mono text-right text-xs text-amber-600">${utils.formatCurrency(row.cashPurchase)}</td>
+                            <td class="px-2 py-2 font-mono text-right text-xs text-orange-600">${utils.formatCurrency(row.cashExpenses)}</td>
+                            <td class="px-2 py-2 font-mono text-right text-xs text-rose-500">${utils.formatCurrency(row.cashSettlement)}</td>
+                            <td class="px-2 py-2 font-mono text-right text-xs font-bold text-red-600 bg-red-50/30">${utils.formatCurrency(cashOut)}</td>
+                            <td class="px-2 py-2 font-mono text-right text-xs font-black text-indigo-700 bg-indigo-50/30 border-l border-indigo-100">${utils.formatCurrency(cashInHand)}</td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="10" class="px-4 py-8 text-center text-gray-400">No cash flow data for the selected period</td></tr>';
+            }
+
+            if (tfoot && sortedDays.length > 0) {
+                tfoot.innerHTML = `
+                    <tr>
+                        <td class="px-2 py-3 text-right uppercase tracking-wider text-gray-800 sticky left-0 bg-gray-100 z-10 border-t-2 border-gray-300">Total</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300">${utils.formatCurrency(grandCashSale)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300">${utils.formatCurrency(grandOutPaid)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300">${utils.formatCurrency(grandReload)}</td>
+                        <td class="px-2 py-3 text-right text-emerald-700 font-black bg-emerald-50/80 border-t-2 border-emerald-300">${utils.formatCurrency(grandCashIn)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300">${utils.formatCurrency(grandPurchase)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300">${utils.formatCurrency(grandExpenses)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300">${utils.formatCurrency(grandSettlement)}</td>
+                        <td class="px-2 py-3 text-right text-red-700 font-black bg-red-50/80 border-t-2 border-red-300">${utils.formatCurrency(grandCashOut)}</td>
+                        <td class="px-2 py-3 text-right text-indigo-800 font-black bg-indigo-100/80 border-t-2 border-indigo-300 text-sm">${utils.formatCurrency(grandInHand)}</td>
+                    </tr>
+                `;
+            } else if (tfoot) {
+                tfoot.innerHTML = '';
+            }
+        } catch (e) {
+            console.error('Cash in/out summary update failed:', e);
         }
     },
 
