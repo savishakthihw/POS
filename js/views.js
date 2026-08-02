@@ -4044,7 +4044,12 @@ var views = window.views = {
     },
 
     removeCreditPendingBill: async (id) => {
-        if (!confirm('Delete this credit pending bill permanently?')) return;
+        const pwd = prompt('🔒 Admin Password Required\n\nEnter password to delete this credit pending bill:');
+        if (pwd === null) return; // Cancelled
+        if (pwd !== '8542074') {
+            utils.showNotification('Incorrect password. Delete cancelled.', 'error');
+            return;
+        }
         await db.credit_pending_bills.delete(id);
         views.loadCreditPendingBills();
         utils.showNotification('Credit pending bill discarded');
