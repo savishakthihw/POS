@@ -1030,7 +1030,8 @@ window.app = {
                 if (!summaryMap[date]) summaryMap[date] = { 
                     sales: 0, profit: 0, fees: 0, margin: 0,
                     outstanding: 0, creditBill: 0, expenses: 0, 
-                    purchase: 0, supSettlement: 0, reloadBill: 0 
+                    purchase: 0, supSettlement: 0, reloadBill: 0,
+                    cash: 0, card: 0, bank: 0, qr: 0
                 };
             };
 
@@ -1042,6 +1043,18 @@ window.app = {
                 summaryMap[s.date].sales += (s.total || 0);
                 summaryMap[s.date].profit += (s.profit || 0);
                 summaryMap[s.date].fees += (s.bankFee || 0);
+
+                if (s.method === 'Mixed') {
+                    summaryMap[s.date].cash += (s.cashAmount || 0);
+                    summaryMap[s.date].card += (s.cardAmount || 0);
+                    summaryMap[s.date].bank += (s.bankAmount || 0);
+                    summaryMap[s.date].qr += (s.qrAmount || 0);
+                } else if (s.method) {
+                    if (s.method === 'Cash') summaryMap[s.date].cash += (s.total || 0);
+                    else if (s.method === 'Visa/Master') summaryMap[s.date].card += (s.total || 0);
+                    else if (s.method === 'Bank') summaryMap[s.date].bank += (s.total || 0);
+                    else if (s.method === 'QR') summaryMap[s.date].qr += (s.total || 0);
+                }
                 
                 if (s.paymentStatus === 'Pending') {
                     const bNo = s.billNo || 'UNKNOWN';
@@ -1104,6 +1117,10 @@ window.app = {
             
             let gSales = 0, gProfit = 0, gFees = 0, gOut = 0, gCredit = 0;
             let gExp = 0, gPurch = 0, gSup = 0, gReload = 0;
+            
+            const paymentTableBody = document.getElementById('report-daily-payment-body');
+            const paymentTableFoot = document.getElementById('report-daily-payment-foot');
+            let gCash = 0, gCard = 0, gBank = 0, gQR = 0;
 
             if (summaryTable) {
                 summaryTable.innerHTML = sortedDays.map(date => {
@@ -1139,6 +1156,45 @@ window.app = {
                         </tr>
                     `;
                 }).join('') || '<tr><td colspan="11" class="px-4 py-8 text-center text-gray-400">No data found for the selected period</td></tr>';
+            }
+
+            if (paymentTableBody) {
+                paymentTableBody.innerHTML = sortedDays.map(date => {
+                    const row = summaryMap[date];
+                    gCash += row.cash;
+                    gCard += row.card;
+                    gBank += row.bank;
+                    gQR += row.qr;
+                    
+                    const totalDayPayment = row.cash + row.card + row.bank + row.qr + row.creditBill;
+
+                    return `
+                        <tr class="border-b hover:bg-gray-50 transition-colors">
+                            <td class="px-2 py-1.5 font-bold text-gray-700 font-mono text-xs">${date.split('-')[2]}/${date.split('-')[1]}</td>
+                            <td class="px-2 py-1.5 font-bold text-emerald-600 text-right text-xs">${utils.formatCurrency(row.cash)}</td>
+                            <td class="px-2 py-1.5 font-bold text-indigo-600 text-right text-xs">${utils.formatCurrency(row.card)}</td>
+                            <td class="px-2 py-1.5 font-bold text-blue-600 text-right text-xs">${utils.formatCurrency(row.bank)}</td>
+                            <td class="px-2 py-1.5 font-bold text-orange-500 text-right text-xs">${utils.formatCurrency(row.qr)}</td>
+                            <td class="px-2 py-1.5 font-bold text-red-500 text-right text-xs">${utils.formatCurrency(row.creditBill)}</td>
+                            <td class="px-2 py-1.5 font-bold text-gray-800 text-right text-xs bg-gray-50">${utils.formatCurrency(totalDayPayment)}</td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="7" class="px-4 py-8 text-center text-gray-400">No data found for the selected period</td></tr>';
+            }
+
+            if (paymentTableFoot && sortedDays.length > 0) {
+                const gTotalPayment = gCash + gCard + gBank + gQR + gCredit;
+                paymentTableFoot.innerHTML = `
+                    <tr>
+                        <td class="px-2 py-3 text-right uppercase tracking-wider text-gray-800 bg-gray-100 border-t-2 border-gray-300 font-bold text-xs">Total</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-emerald-700 text-xs">${utils.formatCurrency(gCash)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-indigo-700 text-xs">${utils.formatCurrency(gCard)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-blue-700 text-xs">${utils.formatCurrency(gBank)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-orange-600 text-xs">${utils.formatCurrency(gQR)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-red-600 text-xs">${utils.formatCurrency(gCredit)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-black text-gray-900 text-xs bg-gray-100">${utils.formatCurrency(gTotalPayment)}</td>
+                    </tr>
+                `;
             }
 
             if (summaryTableFoot && sortedDays.length > 0) {

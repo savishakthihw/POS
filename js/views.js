@@ -3924,7 +3924,7 @@ var views = window.views = {
                     <table class="w-full text-sm text-left">
                         <thead class="bg-gray-50 text-xs text-gray-400 uppercase tracking-wider sticky top-0 border-b border-gray-100">
                             <tr>
-                                <th class="px-6 py-3 bg-gray-50">Time</th>
+                                <th class="px-6 py-3 bg-gray-50">Date</th>
                                 <th class="px-6 py-3 bg-gray-50">Customer Ref</th>
                                 <th class="px-6 py-3 bg-gray-50 text-center">Items</th>
                                 <th class="px-6 py-3 bg-gray-50 text-right">Total Amount</th>
@@ -3982,8 +3982,8 @@ var views = window.views = {
             return `
             <tr class="hover:bg-blue-50 transition-colors">
                 <td class="px-6 py-4 text-gray-500 font-mono text-xs">
-                    ${new Date(bill.timestamp).toLocaleTimeString()}
-                    <div class="text-[10px] text-gray-400">${new Date(bill.timestamp).toLocaleDateString()}</div>
+                    ${new Date(bill.timestamp).toLocaleDateString()}
+                    <div class="text-[10px] text-gray-400">${new Date(bill.timestamp).toLocaleTimeString()}</div>
                 </td>
                 <td class="px-6 py-4 font-bold text-gray-800">${bill.customerName || 'Walk-in Customer'}</td>
                 <td class="px-6 py-4 text-center">
@@ -4619,8 +4619,14 @@ var views = window.views = {
         const discount = parseFloat(document.getElementById('bill-discount').value) || 0;
         const total = subtotal - discount;
 
+        const customDateInput = document.getElementById('pos-custom-date');
+        let billTimestamp = Date.now();
+        if (customDateInput && customDateInput.value) {
+            billTimestamp = new Date(customDateInput.value).getTime();
+        }
+
         const billData = {
-            timestamp: Date.now(),
+            timestamp: billTimestamp,
             customerName: customerName || 'Walk-in',
             itemCount: window.posCart.reduce((acc, item) => acc + item.qty, 0),
             total: total,
@@ -8653,7 +8659,7 @@ var views = window.views = {
                             <div class="flex items-center gap-2 no-print">
                                 <input type="month" id="report-summary-month-filter"
                                     class="text-[10px] font-bold px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer"
-                                    onchange="app.updateReportSummaryTable()">
+                                    onchange="const p = document.getElementById('report-payment-month-filter'); if(p) p.value = this.value; app.updateReportSummaryTable()">
                                 <button
                                     onclick="views.exportToPDF('daily-sales-summary-report-table', 'Daily Sales Summary ' + (document.getElementById('report-summary-month-filter').value ? '- ' + document.getElementById('report-summary-month-filter').value : '(Latest)'))"
                                     class="text-[10px] bg-red-50 text-red-600 px-3 py-1 rounded-lg hover:bg-red-100 transition-all flex items-center gap-1">
@@ -8682,6 +8688,42 @@ var views = window.views = {
                                     <tr><td colspan="11" class="px-4 py-8 text-center text-gray-400">Loading daily summary...</td></tr>
                                 </tbody>
                                 <tfoot id="report-daily-summary-foot" class="bg-gray-50 border-t-2 border-gray-200"></tfoot>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 2. Daily Payment Breakdown -->
+                    <div class="col-span-10 lg:col-span-10 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col mt-6">
+                        <h4 class="font-bold text-lg mb-4 text-gray-800 flex justify-between items-center">
+                            <span class="flex items-center gap-2 text-sm uppercase tracking-wide"><i class="fa-solid fa-money-bill-transfer text-emerald-500"></i> Daily Payment Breakdown (Latest)</span>
+                            <div class="flex items-center gap-2 no-print">
+                                <input type="month" id="report-payment-month-filter"
+                                    class="text-[10px] font-bold px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer"
+                                    onchange="const s = document.getElementById('report-summary-month-filter'); if(s) s.value = this.value; app.updateReportSummaryTable()">
+                                <button
+                                    onclick="views.exportToPDF('daily-payment-breakdown-report-table', 'Daily Payment Breakdown ' + (document.getElementById('report-summary-month-filter').value ? '- ' + document.getElementById('report-summary-month-filter').value : '(Latest)'))"
+                                    class="text-[10px] bg-emerald-50 text-emerald-600 px-3 py-1 rounded-lg hover:bg-emerald-100 transition-all flex items-center gap-1">
+                                    <i class="fa-solid fa-file-pdf"></i> PDF
+                                </button>
+                            </div>
+                        </h4>
+                        <div class="overflow-y-auto" style="max-height: 400px;">
+                            <table id="daily-payment-breakdown-report-table" class="w-full text-sm text-left">
+                                <thead class="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0">
+                                    <tr>
+                                        <th class="px-2 py-2 w-16">Date</th>
+                                        <th class="px-2 py-2 text-right">Cash</th>
+                                        <th class="px-2 py-2 text-right">Card</th>
+                                        <th class="px-2 py-2 text-right">Bank</th>
+                                        <th class="px-2 py-2 text-right">QR</th>
+                                        <th class="px-2 py-2 text-right">Credit</th>
+                                        <th class="px-2 py-2 text-right font-bold">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="report-daily-payment-body" class="divide-y divide-gray-50">
+                                    <tr><td colspan="7" class="px-4 py-8 text-center text-gray-400">Loading daily payment breakdown...</td></tr>
+                                </tbody>
+                                <tfoot id="report-daily-payment-foot" class="bg-gray-50 border-t-2 border-gray-200"></tfoot>
                             </table>
                         </div>
                     </div>
