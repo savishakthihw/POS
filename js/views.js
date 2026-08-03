@@ -3991,10 +3991,16 @@ var views = window.views = {
                 </td>
                 <td class="px-6 py-4 text-right font-mono font-bold text-indigo-600">${utils.formatCurrency(bill.total)}</td>
                 <td class="px-6 py-4 text-center space-x-2">
-                    <button onclick="views.restoreCreditPendingBill(${bill.id})" class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                    <button onclick="views.printCreditPendingBill(${bill.id})" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" title="Print Bill">
+                        <i class="fa-solid fa-print"></i>
+                    </button>
+                    <button onclick="views.downloadCreditPendingBillAsImage(${bill.id})" class="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" title="WhatsApp / Download Image">
+                        <i class="fa-brands fa-whatsapp"></i>
+                    </button>
+                    <button onclick="views.restoreCreditPendingBill(${bill.id})" class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" title="Resume">
                         <i class="fa-solid fa-play mr-1"></i> Resume
                     </button>
-                    <button onclick="views.removeCreditPendingBill(${bill.id})" class="bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
+                    <button onclick="views.removeCreditPendingBill(${bill.id})" class="bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" title="Remove">
                         <i class="fa-solid fa-trash"></i>
                     </button>
                 </td>
@@ -4041,6 +4047,323 @@ var views = window.views = {
         views.renderCart();
         views.loadCreditPendingBills();
         utils.showNotification('Credit Pending Bill Resumed Successfully');
+    },
+
+    printCreditPendingBill: async (id) => {
+        try {
+            const bill = await db.credit_pending_bills.get(id);
+            if (!bill) {
+                utils.showNotification('Bill not found', 'error');
+                return;
+            }
+
+            const cartItems = bill.cartData.cart || [];
+            const billDiscount = bill.cartData.discount || 0;
+            const customerName = bill.customerName || bill.cartData.customer || 'Walk-in';
+            const billTimestamp = bill.timestamp || Date.now();
+            const dateObj = new Date(billTimestamp);
+            const saleDate = dateObj.toLocaleDateString();
+            const saleTime = dateObj.toLocaleTimeString();
+
+            let itemsSubtotal = 0;
+            let totalQty = 0;
+
+            const itemsHtml = cartItems.map(item => {
+                const itemTotal = item.total;
+                itemsSubtotal += item.total;
+                totalQty += item.qty;
+                const hasDiscount = (item.discount || 0) > 0;
+                
+                return `
+                    <tr>
+                        <td colspan="3" style="padding: 5px 0 1px 0; font-weight: bold; line-height: 1.1; font-size: 0.95em; white-space: nowrap; overflow: hidden;">${String(item.name).toUpperCase()}</td>
+                    </tr>
+                    ${hasDiscount ? `
+                        <tr>
+                            <td colspan="3" style="padding: 0 0 1px 0; font-size: 0.85em; font-weight: 500;">
+                                ${item.qty} ${item.unit || 'Pcs'} @ ${item.price.toFixed(2)}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0 0 5px 0; font-size: 0.82em; font-weight: bold; white-space: nowrap;">Discount: -${((item.discount || 0) * item.qty).toFixed(2)}</td>
+                            <td style="text-align: center; font-weight: bold; padding-bottom: 5px; font-size: 0.95em; vertical-align: top;">${item.qty}</td>
+                            <td style="text-align: right; font-weight: bold; padding-bottom: 5px; font-size: 0.95em; vertical-align: top;">${itemTotal.toFixed(2)}</td>
+                        </tr>
+                    ` : `
+                        <tr>
+                            <td style="padding: 0 0 5px 0; font-size: 0.85em; font-weight: 500; vertical-align: top;">
+                                ${item.qty} ${item.unit || 'Pcs'} @ ${item.price.toFixed(2)}
+                            </td>
+                            <td style="text-align: center; font-weight: bold; padding-bottom: 5px; font-size: 0.95em; vertical-align: top;">${item.qty}</td>
+                            <td style="text-align: right; font-weight: bold; padding-bottom: 5px; font-size: 0.95em; vertical-align: top;">${itemTotal.toFixed(2)}</td>
+                        </tr>
+                    `}
+                `;
+            }).join('');
+
+            const finalTotal = itemsSubtotal - billDiscount;
+
+            const rawPhone = localStorage.getItem('storePhone') || '072 18 18 748';
+            const formattedPhone = rawPhone.replace(/\s+/g, '').replace(/^(\d{3})(\d{2})(\d{2})(\d{3})$/, '$1 $2 $3 $4');
+            
+            const receiptHTML = `
+                <div style="width: 100%; padding: 0; margin: 0; overflow: visible; font-family: 'Outfit', 'Noto Sans Sinhala', sans-serif;">
+                    <div style="text-align: center; margin-bottom: 5px;">
+                        <h1 style="font-size: 1.3em; margin: 0 0 2px 0; font-weight: bold; text-transform: uppercase;">${localStorage.getItem('storeName') || 'SAVI SHAKTHI<br>HARDWARE'}</h1>
+                        <p style="margin: 0; font-size: 0.75em;">${localStorage.getItem('storeAddress') || '5th Canel, Srawasthipura, Anuradhapura'}</p>
+                        <p style="margin: 0; font-size: 0.9em;">Phone: ${formattedPhone}</p>
+                        <div style="border-bottom: 2px solid black; margin: 5px 0;"></div>
+                        
+                        <div style="font-size: 0.85em; text-align: left; font-weight: bold;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>PENDING CREDIT BILL</span>
+                                <span style="color: #f59e0b; font-size: 9px; font-weight: normal; border: 1px solid #f59e0b; padding: 0 2px; border-radius: 2px;">ESTIMATE</span>
+                            </div>
+                            <div style="margin-top: 1px;">Ref: ${customerName}</div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.7em; text-align: left; margin-top: 1px;">
+                            <span>Date: ${saleDate}</span>
+                            <span>Time: ${saleTime}</span>
+                        </div>
+                    </div>
+                    
+                    <table style="width: 100%; font-size: 0.9em; border-collapse: collapse; margin-bottom: 5px; table-layout: fixed;">
+                        <thead>
+                            <tr style="border-bottom: 1.5px solid black; border-top: 1.5px solid black;">
+                                <th style="padding: 3px 0; text-align: left; width: 52%;">ITEM</th>
+                                <th style="padding: 3px 0; text-align: center; width: 15%;">QTY</th>
+                                <th style="padding: 3px 0; text-align: right; width: 33%;">AMT</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHtml}
+                        </tbody>
+                    </table>
+                    
+                    <div style="border-top: 1.5px solid black; padding-top: 4px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 2px;">
+                            <span>Items Subtotal</span>
+                            <span style="font-weight: bold;">${itemsSubtotal.toFixed(2)}</span>
+                        </div>
+                        ${billDiscount > 0 ? `
+                        <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 2px;">
+                            <span>Bill Discount</span>
+                            <span style="font-weight: bold;">-${billDiscount.toFixed(2)}</span>
+                        </div>
+                        ` : ''}
+                        
+                        <div style="border-top: 1.5px solid black; border-bottom: 1.5px solid black; padding: 4px 0; margin-top: 2px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: bold; font-size: 1.32em;">TOTAL</span>
+                            <span style="font-weight: bold; font-size: 1.5em;">${finalTotal.toFixed(2)}</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 6px; text-align: center;">
+                        <div style="display: flex; justify-content: center; font-size: 0.8em; font-weight: bold; margin-bottom: 4px;">
+                            <span>Total Items: ${cartItems.length} | Qty: ${totalQty}</span>
+                        </div>
+                        <div style="border-bottom: 1px dashed black; margin-bottom: 6px;"></div>
+                        
+                        <div style="font-weight: bold; font-size: 0.75em; white-space: nowrap;">THANK YOU!</div>
+                        <div style="margin: 2px 0; font-size: 0.7em; opacity: 0.9; font-weight: 500;">Software by AMBH Solutions</div>
+                        <div style="font-family: monospace; font-size: 0.8em; margin-top: 2px; margin-bottom: 2pt; padding-bottom: 0;">CREDIT-PENDING-${id}</div>
+                    </div>
+                </div>
+            `;
+
+            const container = document.getElementById('receipt-container');
+            container.innerHTML = receiptHTML;
+
+            setTimeout(() => {
+                utils.showNotification('Printing Pending Bill...', 'success');
+                window.print();
+            }, 100);
+
+        } catch (err) {
+            console.error('Print Pending Bill error:', err);
+            utils.showNotification('Error printing pending bill: ' + err.message, 'error');
+        }
+    },
+
+    downloadCreditPendingBillAsImage: async (id) => {
+        try {
+            const bill = await db.credit_pending_bills.get(id);
+            if (!bill) {
+                utils.showNotification('Bill not found', 'error');
+                return;
+            }
+
+            utils.showNotification('Generating receipt image...', 'info');
+
+            const cartItems = bill.cartData.cart || [];
+            const billDiscount = bill.cartData.discount || 0;
+            const customerName = bill.customerName || bill.cartData.customer || 'Walk-in';
+            const billTimestamp = bill.timestamp || Date.now();
+            const dateObj = new Date(billTimestamp);
+            const saleDate = dateObj.toLocaleDateString();
+            const saleTime = dateObj.toLocaleTimeString();
+
+            let itemsSubtotal = 0;
+            let totalQty = 0;
+
+            const itemsHtml = cartItems.map(item => {
+                const itemTotal = item.total;
+                itemsSubtotal += item.total;
+                totalQty += item.qty;
+                const hasDiscount = (item.discount || 0) > 0;
+                
+                return `
+                    <div style="margin-top: 4px; page-break-inside: avoid;">
+                        <div style="padding: 6px 0 2px 0; font-weight: bold; line-height: 1.15; font-size: 1.0em; color: #000000; word-break: break-word;">
+                            ${String(item.name).toUpperCase()}
+                        </div>
+                        
+                        <table style="width: 100%; font-size: 0.95em; border-collapse: collapse; table-layout: fixed; color: #000000;">
+                            <tbody>
+                                ${hasDiscount ? `
+                                    <tr>
+                                        <td style="width: 52%; text-align: left; padding: 0 0 6px 0; font-size: 0.85em; font-weight: 500; vertical-align: top; color: #000000;">
+                                            <div>${item.qty} ${item.unit || 'Pcs'} @ ${item.price.toFixed(2)}</div>
+                                            <div style="font-weight: bold; color: #000000; margin-top: 1px;">Discount: -${((item.discount || 0) * item.qty).toFixed(2)}</div>
+                                        </td>
+                                        <td style="width: 15%; text-align: center; font-weight: bold; padding-bottom: 6px; font-size: 1.0em; vertical-align: top; color: #000000;">${item.qty}</td>
+                                        <td style="width: 33%; text-align: right; font-weight: bold; padding-bottom: 6px; font-size: 1.0em; vertical-align: top; color: #000000;">${itemTotal.toFixed(2)}</td>
+                                    </tr>
+                                ` : `
+                                    <tr>
+                                        <td style="width: 52%; text-align: left; padding: 0 0 6px 0; font-size: 0.85em; font-weight: 500; vertical-align: top; color: #000000;">
+                                            ${item.qty} ${item.unit || 'Pcs'} @ ${item.price.toFixed(2)}
+                                        </td>
+                                        <td style="width: 15%; text-align: center; font-weight: bold; padding-bottom: 6px; font-size: 1.0em; vertical-align: top; color: #000000;">${item.qty}</td>
+                                        <td style="width: 33%; text-align: right; font-weight: bold; padding-bottom: 6px; font-size: 1.0em; vertical-align: top; color: #000000;">${itemTotal.toFixed(2)}</td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }).join('');
+
+            const finalTotal = itemsSubtotal - billDiscount;
+
+            const tempContainer = document.createElement('div');
+            tempContainer.id = 'temp-receipt-image-container';
+            tempContainer.style.position = 'absolute';
+            tempContainer.style.left = '-9999px';
+            tempContainer.style.top = '-9999px';
+            tempContainer.style.width = '350px';
+            tempContainer.style.background = '#ffffff';
+            tempContainer.style.color = '#000000';
+            tempContainer.style.padding = '20px 24px';
+            tempContainer.style.boxSizing = 'border-box';
+            tempContainer.style.fontFamily = "'Outfit', 'Noto Sans Sinhala', 'Arial', sans-serif";
+            tempContainer.style.fontSize = '12px';
+            tempContainer.style.lineHeight = '1.3';
+            tempContainer.style.overflow = 'visible';
+
+            const rawPhone = localStorage.getItem('storePhone') || '072 18 18 748';
+            const formattedPhone = rawPhone.replace(/\s+/g, '').replace(/^(\d{3})(\d{2})(\d{2})(\d{3})$/, '$1 $2 $3 $4');
+            
+            const receiptHTML = `
+                <div style="width: 100%; padding: 0; margin: 0; background: #ffffff;">
+                    <div style="text-align: center; margin-bottom: 8px;">
+                        <h1 style="font-size: 1.5em; margin: 0 0 3px 0; font-weight: bold; text-transform: uppercase; color: #000000; letter-spacing: 0.5px;">${localStorage.getItem('storeName') || 'SAVI SHAKTHI<br>HARDWARE'}</h1>
+                        <p style="margin: 0; font-size: 0.85em; color: #000000; font-weight: 500;">${localStorage.getItem('storeAddress') || '5th Canel, Srawasthipura, Anuradhapura'}</p>
+                        <p style="margin: 1px 0 0 0; font-size: 0.95em; font-weight: bold; color: #000000;">Phone: ${formattedPhone}</p>
+                        <div style="border-bottom: 2px solid #000000; margin: 8px 0;"></div>
+                        
+                        <div style="font-size: 0.95em; text-align: left; font-weight: bold; color: #000000;">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span>PENDING CREDIT BILL</span>
+                                <span style="color: #f59e0b; font-size: 9px; font-weight: normal; border: 1px solid #f59e0b; padding: 0 2px; border-radius: 2px;">ESTIMATE</span>
+                            </div>
+                            <div style="margin-top: 2px;">Ref: ${customerName}</div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85em; text-align: left; margin-top: 2px; color: #000000;">
+                            <span>Date: ${saleDate}</span>
+                            <span>Time: ${saleTime}</span>
+                        </div>
+                    </div>
+                    
+                    <table style="width: 100%; font-size: 0.95em; border-collapse: collapse; table-layout: fixed; color: #000000;">
+                        <thead>
+                            <tr style="border-bottom: 1.5px solid #000000; border-top: 1.5px solid #000000;">
+                                <th style="padding: 7px 0; text-align: left; width: 52%; font-weight: bold; vertical-align: middle; line-height: 1.2;">ITEM</th>
+                                <th style="padding: 7px 0; text-align: center; width: 15%; font-weight: bold; vertical-align: middle; line-height: 1.2;">QTY</th>
+                                <th style="padding: 7px 0; text-align: right; width: 33%; font-weight: bold; vertical-align: middle; line-height: 1.2;">AMT</th>
+                            </tr>
+                        </thead>
+                    </table>
+
+                    <div style="margin-bottom: 8px;">
+                        ${itemsHtml}
+                    </div>
+                    
+                    <div style="border-top: 2px solid #000000; padding-top: 6px; color: #000000;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.95em; margin-bottom: 3px; font-weight: 500;">
+                            <span>Items Subtotal</span>
+                            <span style="font-weight: bold;">${itemsSubtotal.toFixed(2)}</span>
+                        </div>
+                        ${billDiscount > 0 ? `
+                        <div style="display: flex; justify-content: space-between; font-size: 0.95em; margin-bottom: 3px; font-weight: 500;">
+                            <span>Bill Discount</span>
+                            <span style="font-weight: bold;">-${billDiscount.toFixed(2)}</span>
+                        </div>
+                        ` : ''}
+                        
+                        <div style="border-top: 2px solid #000000; border-bottom: 2px solid #000000; padding: 6px 0; margin-top: 4px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: bold; font-size: 1.4em;">TOTAL</span>
+                            <span style="font-weight: bold; font-size: 1.6em;">${finalTotal.toFixed(2)}</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 12px; text-align: center; color: #000000;">
+                        <div style="display: flex; justify-content: center; font-size: 0.85em; font-weight: bold; margin-bottom: 6px;">
+                            <span>Total Items: ${cartItems.length} | Qty: ${totalQty}</span>
+                        </div>
+                        <div style="border-bottom: 1.5px dashed #000000; margin-bottom: 10px;"></div>
+                        
+                        <div style="font-weight: bold; font-size: 0.8em; white-space: nowrap; letter-spacing: 0.5px;">THANK YOU!</div>
+                        <div style="margin: 3px 0 0 0; font-size: 0.75em; opacity: 0.95; font-weight: bold;">Software by AMBH Solutions</div>
+                        <div style="font-family: monospace; font-size: 0.85em; margin-top: 3px; font-weight: bold;">CREDIT-PENDING-${id}</div>
+                    </div>
+                </div>
+            `;
+
+            tempContainer.innerHTML = receiptHTML;
+            document.body.appendChild(tempContainer);
+
+            setTimeout(() => {
+                html2canvas(tempContainer, {
+                    scale: 2, 
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff'
+                }).then(canvas => {
+                    const imgData = canvas.toDataURL('image/png');
+                    
+                    const link = document.createElement('a');
+                    link.download = `Pending_Bill_${id}.png`;
+                    link.href = imgData;
+                    document.body.appendChild(link);
+                    link.click();
+                    
+                    document.body.removeChild(link);
+                    document.body.removeChild(tempContainer);
+                    utils.showNotification('Receipt image downloaded successfully!', 'success');
+                }).catch(err => {
+                    console.error('html2canvas rendering error:', err);
+                    utils.showNotification('Failed to generate image: ' + err.message, 'error');
+                    if (document.body.contains(tempContainer)) {
+                        document.body.removeChild(tempContainer);
+                    }
+                });
+            }, 100);
+
+        } catch (err) {
+            console.error('Download pending receipt image error:', err);
+            utils.showNotification('Error creating receipt image: ' + err.message, 'error');
+        }
     },
 
     removeCreditPendingBill: async (id) => {
@@ -8634,8 +8957,11 @@ var views = window.views = {
                     bills[bNo].total += (s.total || 0);
                 });
 
-                return Object.values(bills).map(b => {
+                let totalOutstandingDue = 0;
+
+                const rowsHTML = Object.values(bills).map(b => {
                     const due = b.total - b.paid;
+                    if (due > 0) totalOutstandingDue += due;
                     return `
                                         <tr class="hover:bg-red-50 transition-colors">
                                             <td class="px-4 py-3 font-mono text-gray-500 text-xs text-date">${new Date(b.date).toLocaleDateString()}</td>
@@ -8648,6 +8974,14 @@ var views = window.views = {
                                             </td>
                                         </tr>
                                     `}).join('');
+                                    
+                return rowsHTML + `
+                    <tr class="bg-red-100 border-t-2 border-red-200 sticky bottom-0">
+                        <td colspan="4" class="px-4 py-3 text-right font-black uppercase text-red-800 text-xs tracking-wider shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">Total Summary</td>
+                        <td class="px-4 py-3 text-right font-black text-red-700 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] font-mono">${utils.formatCurrency(totalOutstandingDue)}</td>
+                        <td class="px-4 py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] print:hidden"></td>
+                    </tr>
+                `;
             })()}
                     </tbody>
                 </table>
@@ -8810,7 +9144,7 @@ var views = window.views = {
                 </div>
 
                 <!-- 4. Monthly Financial Performance Table -->
-                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden mb-6">
+                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col mb-6">
                      <h4 class="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide flex items-center justify-between">
                         <div class="flex items-center gap-4">
                             <span class="flex items-center gap-2"><i class="fa-solid fa-calendar-check text-indigo-500"></i> Performance Year</span>
@@ -8824,6 +9158,32 @@ var views = window.views = {
                     </h4>
                     <div id="report-monthly-performance-container" class="overflow-x-auto min-h-[200px] flex items-center justify-center italic text-gray-400">
                          Loading historical report data for ${currentYearKey}...
+                    </div>
+                </div>
+
+                <!-- 4a. Monthly Purchase Report Card -->
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-blue-100 flex flex-col mb-6">
+                    <h4 class="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide flex items-center justify-between">
+                        <span class="flex items-center gap-2"><i class="fa-solid fa-cart-shopping text-blue-500"></i> Monthly Purchase Report</span>
+                        <button onclick="views.exportToPDF('monthly-purchase-report-table', 'Monthly Purchase Report - ' + (document.getElementById('report-year-input').value || '${app.currentReportYear}'))" class="text-[10px] bg-blue-50 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-100 transition-all flex items-center gap-1">
+                            <i class="fa-solid fa-file-pdf"></i> PDF
+                        </button>
+                    </h4>
+                    <div id="report-purchase-container" class="overflow-x-auto min-h-[100px] flex items-center justify-center italic text-gray-400">
+                        Loading purchase report...
+                    </div>
+                </div>
+
+                <!-- 4b. Monthly Credit Settlement Report Card -->
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-teal-100 flex flex-col mb-6">
+                    <h4 class="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide flex items-center justify-between">
+                        <span class="flex items-center gap-2"><i class="fa-solid fa-handshake text-teal-600"></i> Monthly Credit Settlement Report</span>
+                        <button onclick="views.exportToPDF('monthly-credit-settlement-table', 'Monthly Credit Settlement Report - ' + (document.getElementById('report-year-input').value || '${app.currentReportYear}'))" class="text-[10px] bg-teal-50 text-teal-700 px-3 py-1 rounded-lg hover:bg-teal-100 transition-all flex items-center gap-1">
+                            <i class="fa-solid fa-file-pdf"></i> PDF
+                        </button>
+                    </h4>
+                    <div id="report-settlement-container" class="overflow-x-auto min-h-[100px] flex items-center justify-center italic text-gray-400">
+                        Loading settlement report...
                     </div>
                 </div>
 
@@ -9121,17 +9481,28 @@ var views = window.views = {
 
                 try {
                     const monthlyData = {};
-                    // Only fetch minimal required fields for the historical table (filtered by year)
+                    
                     const yearSales = await db.sales.where('date').startsWith(currentYearKey).toArray();
                     const yearExpenses = await db.expenses.where('date').startsWith(currentYearKey).toArray();
-                    const yearStockIn = await db.stock_in.where('date').startsWith(currentYearKey).toArray();
+                    const yearPurchases = await db.purchases.where('date').startsWith(currentYearKey).toArray();
+                    const yearCreditSettlements = await db.credit_settlements.where('dateSettled').startsWith(currentYearKey).toArray();
+                    const yearReloadBills = await db.reload_bills.where('date').startsWith(currentYearKey).toArray();
 
                     const pendingBillsByMonth = {};
+
+                    const initMonth = (m) => {
+                        if (!monthlyData[m]) monthlyData[m] = { 
+                            revenue: 0, grossProfit: 0, expenses: 0, outstanding: 0, salesCost: 0, soldItemIds: new Set(),
+                            purchase: 0, supSettlement: 0, reloadBill: 0,
+                            purchaseByMethod: { Cash: 0, Cheque: 0, Credit: 0, Bank: 0, DF: 0 },
+                            settleByMethod: { Cash: 0, Cheque: 0, Bank: 0, DF: 0 }
+                        };
+                    };
 
                     yearSales.forEach(s => {
                         if (s.paymentStatus === 'Cancelled') return;
                         const m = s.date.substring(0, 7);
-                        if (!monthlyData[m]) monthlyData[m] = { revenue: 0, grossProfit: 0, expenses: 0, stockIn: 0, outstanding: 0, salesCost: 0, soldItemIds: new Set() };
+                        initMonth(m);
                         monthlyData[m].revenue += (s.total || 0);
                         monthlyData[m].grossProfit += (s.profit || 0);
                         monthlyData[m].salesCost += (s.qty * (s.costPrice || 0));
@@ -9151,97 +9522,237 @@ var views = window.views = {
 
                     yearExpenses.forEach(e => {
                         const m = e.date.substring(0, 7);
-                        if (!monthlyData[m]) monthlyData[m] = { revenue: 0, grossProfit: 0, expenses: 0, stockIn: 0, outstanding: 0, salesCost: 0, soldItemIds: new Set() };
+                        initMonth(m);
                         monthlyData[m].expenses += (e.amount || 0);
                     });
 
-                    yearStockIn.forEach(st => {
-                        const m = st.date.substring(0, 7);
-                        if (!monthlyData[m]) monthlyData[m] = { revenue: 0, grossProfit: 0, expenses: 0, stockIn: 0, outstanding: 0, salesCost: 0, soldItemIds: new Set() };
-                        monthlyData[m].stockIn += (st.total || 0);
+                    yearPurchases.forEach(p => {
+                        const m = p.date.substring(0, 7);
+                        initMonth(m);
+                        monthlyData[m].purchase += (p.totalBill || 0);
+                        let method = p.method || 'Cash';
+                        if (method === 'Visa/Master') method = 'Bank';
+                        if (monthlyData[m].purchaseByMethod[method] !== undefined) {
+                            monthlyData[m].purchaseByMethod[method] += (p.totalBill || 0);
+                        } else {
+                            monthlyData[m].purchaseByMethod['Cash'] += (p.totalBill || 0);
+                        }
                     });
 
-                    const currentTotalStockValue = allInventory.reduce((sum, item) => sum + (item.stockValue || 0), 0);
+                    yearCreditSettlements.forEach(s => {
+                        const m = s.dateSettled.substring(0, 7);
+                        initMonth(m);
+                        monthlyData[m].supSettlement += (s.amount || 0);
+                        let method = s.paymentMethod || s.method || 'Cash';
+                        if (method === 'Visa/Master') method = 'Bank';
+                        if (monthlyData[m].settleByMethod[method] !== undefined) {
+                            monthlyData[m].settleByMethod[method] += (s.amount || 0);
+                        } else {
+                            monthlyData[m].settleByMethod['Cash'] += (s.amount || 0);
+                        }
+                    });
+
+                    yearReloadBills.forEach(r => {
+                        const m = r.date.substring(0, 7);
+                        initMonth(m);
+                        monthlyData[m].reloadBill += (r.total || 0);
+                    });
+
                     const validMonthKeys = [...new Set(Object.keys(monthlyData).filter(k => k.startsWith(currentYearKey) && /^\d{4}-\d{2}$/.test(k)))].sort().reverse();
 
-                    let runningVal = currentTotalStockValue;
-                    const monthEndValues = {};
-                    validMonthKeys.forEach(m => {
-                        monthEndValues[m] = runningVal;
-                        const d = monthlyData[m];
-                        runningVal = runningVal - (d.stockIn || 0) + (d.salesCost || 0);
-                    });
+                    let tRev = 0, tGP = 0, tExp = 0, tNP = 0;
+                    let tPurch = 0, tSup = 0, tReload = 0;
 
+                    const perfRows = validMonthKeys.map(m => {
+                        const d = monthlyData[m];
+                        const net = d.grossProfit - d.expenses;
+                        
+                        tRev += (d.revenue || 0);
+                        tGP += (d.grossProfit || 0);
+                        tExp += (d.expenses || 0);
+                        tNP += net;
+                        tPurch += (d.purchase || 0);
+                        tSup += (d.supSettlement || 0);
+                        tReload += (d.reloadBill || 0);
+
+                        const gMargin = d.revenue > 0 ? (d.grossProfit / d.revenue) * 100 : 0;
+                        const nMargin = d.revenue > 0 ? (net / d.revenue) * 100 : 0;
+                        const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
+                        const deadStockCount = allInventory.filter(item => !d.soldItemIds.has(item.itemId) && item.currentStock > 0).length;
+
+                        return `
+                            <tr class="hover:bg-gray-50 transition-colors">
+                                <td class="px-3 py-1.5 font-bold text-gray-700 whitespace-nowrap w-28">${mName}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.revenue)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${utils.formatNumber(d.grossProfit)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${gMargin.toFixed(1)}%</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-orange-600">${utils.formatNumber(d.expenses)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono font-bold ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${utils.formatNumber(net)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${nMargin.toFixed(1)}%</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-indigo-600">${d.soldItemIds.size}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-red-600">${deadStockCount}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-gray-800">${utils.formatNumber(d.purchase)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-gray-600">${utils.formatNumber(d.supSettlement)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-purple-700">${utils.formatNumber(d.reloadBill)}</td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                    const perfTRow = validMonthKeys.length > 0 ? `
+                        <tr class="bg-gray-100 font-bold border-t-2 border-gray-200">
+                            <td class="px-3 py-2 text-gray-800 uppercase tracking-wider sticky left-0 bg-gray-100 z-10 border-r border-gray-200 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">Total</td>
+                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tRev)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-emerald-700">${utils.formatNumber(tGP)}</td>
+                            <td class="px-3 py-2 text-right"></td>
+                            <td class="px-3 py-2 text-right font-mono text-orange-700">${utils.formatNumber(tExp)}</td>
+                            <td class="px-3 py-2 text-right font-mono font-bold ${tNP >= 0 ? 'text-blue-700' : 'text-red-700'}">${utils.formatNumber(tNP)}</td>
+                            <td class="px-3 py-2" colspan="3"></td>
+                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tPurch)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tSup)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tReload)}</td>
+                        </tr>
+                    ` : '';
+
+                    let tPCash = 0, tPCheque = 0, tPCredit = 0, tPBank = 0, tPDF = 0, tPTotal = 0;
+                    const purchRows = validMonthKeys.map(m => {
+                        const d = monthlyData[m];
+                        const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
+                        tPCash += d.purchaseByMethod.Cash;
+                        tPCheque += d.purchaseByMethod.Cheque;
+                        tPCredit += d.purchaseByMethod.Credit;
+                        tPBank += d.purchaseByMethod.Bank;
+                        tPDF += d.purchaseByMethod.DF;
+                        tPTotal += d.purchase;
+                        
+                        return `
+                            <tr class="hover:bg-gray-50 transition-colors">
+                                <td class="px-3 py-1.5 font-bold text-gray-700 text-center">${mName}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Cash)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Cheque)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Credit)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Bank)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.DF)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono font-bold text-gray-800">${utils.formatNumber(d.purchase)}</td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                    const purchTRow = validMonthKeys.length > 0 ? `
+                        <tr class="bg-gray-100 font-bold border-t-2 border-gray-200">
+                            <td class="px-3 py-2 text-gray-800 text-center uppercase tracking-wider">Total</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPCash)}</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPCheque)}</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPCredit)}</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPBank)}</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPDF)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tPTotal)}</td>
+                        </tr>
+                    ` : '';
+
+                    let tSCash = 0, tSCheque = 0, tSBank = 0, tSDF = 0, tSTotal = 0;
+                    const settleRows = validMonthKeys.map(m => {
+                        const d = monthlyData[m];
+                        const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
+                        tSCash += d.settleByMethod.Cash;
+                        tSCheque += d.settleByMethod.Cheque;
+                        tSBank += d.settleByMethod.Bank;
+                        tSDF += d.settleByMethod.DF;
+                        tSTotal += d.supSettlement;
+                        
+                        return `
+                            <tr class="hover:bg-gray-50 transition-colors">
+                                <td class="px-3 py-1.5 font-bold text-gray-700 text-center">${mName}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.settleByMethod.Cash)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.settleByMethod.Cheque)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.settleByMethod.Bank)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.settleByMethod.DF)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono font-bold text-gray-800">${utils.formatNumber(d.supSettlement)}</td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                    const settleTRow = validMonthKeys.length > 0 ? `
+                        <tr class="bg-gray-100 font-bold border-t-2 border-gray-200">
+                            <td class="px-3 py-2 text-gray-800 text-center uppercase tracking-wider">Total</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tSCash)}</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tSCheque)}</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tSBank)}</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tSDF)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tSTotal)}</td>
+                        </tr>
+                    ` : '';
+
+                    // Performance Year table only
                     perfContainer.innerHTML = `
-                        <table id="monthly-performance-table" class="w-full text-sm text-left">
-                            <thead class="text-gray-400 uppercase bg-gray-50 sticky top-0">
+                        <div class="overflow-x-auto w-full">
+                        <table id="monthly-performance-table" class="text-sm text-left whitespace-nowrap border-collapse" style="min-width:900px">
+                            <thead class="text-[10px] text-gray-400 uppercase bg-gray-50">
                                 <tr>
-                                    <th class="px-3 py-3 text-center w-24">Month</th>
+                                    <th class="px-3 py-3 text-left w-28">Month</th>
                                     <th class="px-3 py-3 text-right">Rev</th>
                                     <th class="px-3 py-3 text-right text-emerald-600">GP</th>
                                     <th class="px-3 py-3 text-right text-emerald-600">GM%</th>
                                     <th class="px-3 py-3 text-right text-orange-600">Exp</th>
                                     <th class="px-3 py-3 text-right text-blue-600">NP</th>
                                     <th class="px-3 py-3 text-right text-blue-600">NM%</th>
-                                    <th class="px-3 py-3 text-right text-indigo-600">FM items</th>
+                                    <th class="px-3 py-3 text-right text-indigo-600">FM Items</th>
                                     <th class="px-3 py-3 text-right text-red-600">Dead Stocks</th>
-                                    <th class="px-3 py-3 text-right text-gray-800">New Stock</th>
-                                    <th class="px-3 py-3 text-right text-gray-600">Month End S.Value</th>
-                                    <th class="px-3 py-3 text-right text-red-700">Outst.</th>
+                                    <th class="px-3 py-3 text-right text-gray-800">Purchase</th>
+                                    <th class="px-3 py-3 text-right text-gray-600">Credit Settlement</th>
+                                    <th class="px-3 py-3 text-right text-purple-700">Reload / Bill</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-50">
-                                ${(() => {
-                                    let tRev = 0, tGP = 0, tExp = 0, tNP = 0;
-                                    const rows = validMonthKeys.map(m => {
-                                        const d = monthlyData[m];
-                                        const net = d.grossProfit - d.expenses;
-                                        
-                                        tRev += (d.revenue || 0);
-                                        tGP += (d.grossProfit || 0);
-                                        tExp += (d.expenses || 0);
-                                        tNP += net;
-
-                                        const gMargin = d.revenue > 0 ? (d.grossProfit / d.revenue) * 100 : 0;
-                                        const nMargin = d.revenue > 0 ? (net / d.revenue) * 100 : 0;
-                                        const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
-                                        const deadStockCount = allInventory.filter(item => !d.soldItemIds.has(item.itemId) && item.currentStock > 0).length;
-
-                                        return `
-                                            <tr class="hover:bg-gray-50 transition-colors">
-                                                <td class="px-3 py-1.5 font-bold text-gray-700 text-center">${mName}</td>
-                                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.revenue)}</td>
-                                                <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${utils.formatNumber(d.grossProfit)}</td>
-                                                <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${gMargin.toFixed(1)}%</td>
-                                                <td class="px-3 py-1.5 text-right font-mono text-orange-600">${utils.formatNumber(d.expenses)}</td>
-                                                <td class="px-3 py-1.5 text-right font-mono font-bold ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${utils.formatNumber(net)}</td>
-                                                <td class="px-3 py-1.5 text-right font-mono ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${nMargin.toFixed(1)}%</td>
-                                                <td class="px-3 py-1.5 text-right font-mono text-indigo-600">${d.soldItemIds.size}</td>
-                                                <td class="px-3 py-1.5 text-right font-mono text-red-600">${deadStockCount}</td>
-                                                <td class="px-3 py-1.5 text-right font-mono text-gray-800">${utils.formatNumber(d.stockIn)}</td>
-                                                <td class="px-3 py-1.5 text-right font-mono text-gray-600">${utils.formatNumber(monthEndValues[m])}</td>
-                                                <td class="px-3 py-1.5 text-right font-mono text-red-700">${utils.formatNumber(d.outstanding)}</td>
-                                            </tr>
-                                        `;
-                                    }).join('');
-
-                                    const tRow = validMonthKeys.length > 0 ? `
-                                        <tr class="bg-gray-100 font-bold border-t-2 border-gray-200">
-                                            <td class="px-3 py-2 text-gray-800 text-center uppercase tracking-wider">Total</td>
-                                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tRev)}</td>
-                                            <td class="px-3 py-2 text-right font-mono text-emerald-700">${utils.formatNumber(tGP)}</td>
-                                            <td class="px-3 py-2 text-right"></td>
-                                            <td class="px-3 py-2 text-right font-mono text-orange-700">${utils.formatNumber(tExp)}</td>
-                                            <td class="px-3 py-2 text-right font-mono font-bold ${tNP >= 0 ? 'text-blue-700' : 'text-red-700'}">${utils.formatNumber(tNP)}</td>
-                                            <td class="px-3 py-2" colspan="6"></td>
-                                        </tr>
-                                    ` : '';
-
-                                    return rows + tRow;
-                                })()}
+                            <tbody class="divide-y divide-gray-100">
+                                ${perfRows}
                             </tbody>
                         </table>
+                        </div>
                     `;
+
+                    // Monthly Purchase Report - separate card
+                    const purchContainer = document.getElementById('report-purchase-container');
+                    if (purchContainer) {
+                        purchContainer.innerHTML = `
+                            <table id="monthly-purchase-report-table" class="w-full text-sm text-left whitespace-nowrap">
+                                <thead class="text-[10px] text-gray-400 uppercase bg-gray-50 sticky top-0">
+                                    <tr>
+                                        <th class="px-3 py-2 text-center w-24">Month</th>
+                                        <th class="px-3 py-2 text-right">Cash</th>
+                                        <th class="px-3 py-2 text-right">Cheque</th>
+                                        <th class="px-3 py-2 text-right">Credit</th>
+                                        <th class="px-3 py-2 text-right">Bank</th>
+                                        <th class="px-3 py-2 text-right">DF</th>
+                                        <th class="px-3 py-2 text-right text-blue-700 font-bold">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    ${purchRows}
+                                </tbody>
+                            </table>
+                        `;
+                    }
+
+                    // Monthly Credit Settlement Report - separate card
+                    const settleContainer = document.getElementById('report-settlement-container');
+                    if (settleContainer) {
+                        settleContainer.innerHTML = `
+                            <table id="monthly-credit-settlement-table" class="w-full text-sm text-left whitespace-nowrap">
+                                <thead class="text-[10px] text-gray-400 uppercase bg-gray-50 sticky top-0">
+                                    <tr>
+                                        <th class="px-3 py-2 text-center w-24">Month</th>
+                                        <th class="px-3 py-2 text-right">Cash</th>
+                                        <th class="px-3 py-2 text-right">Cheque</th>
+                                        <th class="px-3 py-2 text-right">Bank</th>
+                                        <th class="px-3 py-2 text-right">DF</th>
+                                        <th class="px-3 py-2 text-right text-teal-700 font-bold">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    ${settleRows}
+                                </tbody>
+                            </table>
+                        `;
+                    }
                 } catch (e) {
                     console.error('Historical report calculation failed:', e);
                     perfContainer.innerHTML = '<div class="text-red-500 p-4 font-bold">Historical data calculation failed.</div>';
