@@ -226,6 +226,11 @@ db.version(34).stores({
     reload_bills_archive: "++id, date, type, amount, commission, total, archiveYear, updatedAt"
 });
 
+// Drop credit_pending_bills table
+db.version(35).stores({
+    credit_pending_bills: null
+});
+
 // Helper to check DB connection
 db.open().then(async () => {
     console.log("Database Opened Successfully");
@@ -261,7 +266,7 @@ db.open().then(async () => {
 // --- CLOUD SYNC TRACKING HOOKS ---
 const syncTables = [
     'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 
-    'purchases', 'settings', 'item_batches', 'users', 'held_bills', 'credit_pending_bills',
+    'purchases', 'settings', 'item_batches', 'users', 'held_bills',
     'sales_archive', 'stock_in_archive', 'purchases_archive', 'expenses_archive', 'closing_balances', 'audit_logs',
     'credit_settlements', 'credit_settlements_archive', 'reload_bills', 'reload_bills_archive'
 ];

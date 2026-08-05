@@ -1023,7 +1023,6 @@ window.app = {
             const monthExpenses = await db.expenses.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
             const monthPurchases = await db.purchases.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
             const monthReloads = await db.reload_bills.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
-            const allCreditPending = await db.credit_pending_bills.toArray();
 
             const summaryMap = {};
             const initDate = (date) => {
@@ -1035,7 +1034,7 @@ window.app = {
                 };
             };
 
-            const pendingByDateBill = {};
+            const billGroups = {};
 
             // Process Sales (Sales, Profit, Fees, Outstanding)
             monthSales.forEach(s => {
@@ -1044,45 +1043,44 @@ window.app = {
                 summaryMap[s.date].profit += (s.profit || 0);
                 summaryMap[s.date].fees += (s.bankFee || 0);
 
-                if (s.method === 'Mixed') {
-                    summaryMap[s.date].cash += (s.cashAmount || 0);
-                    summaryMap[s.date].card += (s.cardAmount || 0);
-                    summaryMap[s.date].bank += (s.bankAmount || 0);
-                    summaryMap[s.date].qr += (s.qrAmount || 0);
-                } else if (s.method) {
-                    if (s.method === 'Cash') summaryMap[s.date].cash += (s.total || 0);
-                    else if (s.method === 'Visa/Master') summaryMap[s.date].card += (s.total || 0);
-                    else if (s.method === 'Bank') summaryMap[s.date].bank += (s.total || 0);
-                    else if (s.method === 'QR') summaryMap[s.date].qr += (s.total || 0);
+                const bNo = s.billNo || 'STRAY';
+                if (!billGroups[bNo]) {
+                    billGroups[bNo] = {
+                        date: s.date,
+                        total: 0,
+                        paid: s.paidAmount || 0,
+                        cash: s.cashAmount || 0,
+                        card: s.cardAmount || 0,
+                        bank: s.bankAmount || 0,
+                        qr: s.qrAmount || 0,
+                        method: s.method || 'Cash'
+                    };
                 }
-                
-                if (s.paymentStatus === 'Pending') {
-                    const bNo = s.billNo || 'UNKNOWN';
-                    if (!pendingByDateBill[s.date]) pendingByDateBill[s.date] = {};
-                    if (!pendingByDateBill[s.date][bNo]) {
-                        pendingByDateBill[s.date][bNo] = { total: 0, paid: (s.paidAmount || 0) };
-                    }
-                    pendingByDateBill[s.date][bNo].total += (s.total || 0);
-                }
+                billGroups[bNo].total += (s.total || 0);
             });
 
-            // Calculate Outstanding = Outstanding Payments Table (unpaid credit sales)
-            for (const dateKey in pendingByDateBill) {
-                for (const bNo in pendingByDateBill[dateKey]) {
-                    const b = pendingByDateBill[dateKey][bNo];
-                    summaryMap[dateKey].outstanding += (b.total - b.paid);
-                }
-            }
+            // Calculate Payment Breakdown (Cash, Card, Bank, QR) and Outstanding
+            Object.values(billGroups).forEach(b => {
+                const billOutstanding = Math.max(0, b.total - b.paid);
+                const settledAmount = b.total - billOutstanding;
 
-            // Process Credit Bill Pending Table (Drafts)
-            allCreditPending.forEach(b => {
-                if (b.timestamp) {
-                    const dateObj = new Date(b.timestamp);
-                    const dateKey = dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
-                    const mStr = dateKey.substring(0, 7);
-                    if (mStr === currentMonth) {
-                        initDate(dateKey);
-                        summaryMap[dateKey].creditBill += (b.total || 0);
+                summaryMap[b.date].outstanding += billOutstanding;
+
+                if (b.method === 'Mixed') {
+                    summaryMap[b.date].cash += (b.cash || 0);
+                    summaryMap[b.date].card += (b.card || 0);
+                    summaryMap[b.date].bank += (b.bank || 0);
+                    summaryMap[b.date].qr += (b.qr || 0);
+                } else {
+                    const m = (b.method === 'Cheque') ? 'QR' : b.method;
+                    if (m === 'Visa/Master') {
+                        summaryMap[b.date].card += settledAmount;
+                    } else if (m === 'Bank') {
+                        summaryMap[b.date].bank += settledAmount;
+                    } else if (m === 'QR') {
+                        summaryMap[b.date].qr += settledAmount;
+                    } else if (m !== 'Credit') {
+                        summaryMap[b.date].cash += settledAmount;
                     }
                 }
             });
@@ -1144,18 +1142,17 @@ window.app = {
                         <tr class="border-b hover:bg-gray-50 transition-colors">
                             <td class="px-2 py-1.5 font-bold text-gray-700 font-mono text-xs">${date.split('-')[2]}/${date.split('-')[1]}</td>
                             <td class="px-2 py-1.5 font-bold text-indigo-700 text-right text-xs">${utils.formatCurrency(sales)}</td>
+                            <td class="px-2 py-1.5 font-mono text-gray-600 text-right text-xs">${utils.formatCurrency(row.outstanding)}</td>
                             <td class="px-2 py-1.5 font-bold text-emerald-600 text-right text-xs">${utils.formatCurrency(profit)}</td>
                             <td class="px-2 py-1.5 font-bold text-rose-600 text-right text-xs">${fees > 0 ? '-' + utils.formatCurrency(fees) : '-'}</td>
                             <td class="px-2 py-1.5 font-bold text-purple-600 text-right text-xs">${margin.toFixed(1)}%</td>
-                            <td class="px-2 py-1.5 font-mono text-gray-600 text-right text-xs">${utils.formatCurrency(row.outstanding)}</td>
-                            <td class="px-2 py-1.5 font-mono text-amber-600 text-right text-xs">${utils.formatCurrency(row.creditBill)}</td>
                             <td class="px-2 py-1.5 font-mono text-red-500 text-right text-xs">${utils.formatCurrency(row.expenses)}</td>
                             <td class="px-2 py-1.5 font-mono text-blue-600 text-right text-xs">${utils.formatCurrency(row.purchase)}</td>
                             <td class="px-2 py-1.5 font-mono text-orange-500 text-right text-xs">${utils.formatCurrency(row.supSettlement)}</td>
                             <td class="px-2 py-1.5 font-mono text-fuchsia-600 text-right text-xs">${utils.formatCurrency(row.reloadBill)}</td>
                         </tr>
                     `;
-                }).join('') || '<tr><td colspan="11" class="px-4 py-8 text-center text-gray-400">No data found for the selected period</td></tr>';
+                }).join('') || '<tr><td colspan="10" class="px-4 py-8 text-center text-gray-400">No data found for the selected period</td></tr>';
             }
 
             if (paymentTableBody) {
@@ -1165,8 +1162,9 @@ window.app = {
                     gCard += row.card;
                     gBank += row.bank;
                     gQR += row.qr;
+                    gCredit += row.outstanding;
                     
-                    const totalDayPayment = row.cash + row.card + row.bank + row.qr + row.creditBill;
+                    const totalDayPayment = row.cash + row.card + row.bank + row.qr + row.outstanding;
 
                     return `
                         <tr class="border-b hover:bg-gray-50 transition-colors">
@@ -1175,7 +1173,7 @@ window.app = {
                             <td class="px-2 py-1.5 font-bold text-indigo-600 text-right text-xs">${utils.formatCurrency(row.card)}</td>
                             <td class="px-2 py-1.5 font-bold text-blue-600 text-right text-xs">${utils.formatCurrency(row.bank)}</td>
                             <td class="px-2 py-1.5 font-bold text-orange-500 text-right text-xs">${utils.formatCurrency(row.qr)}</td>
-                            <td class="px-2 py-1.5 font-bold text-red-500 text-right text-xs">${utils.formatCurrency(row.creditBill)}</td>
+                            <td class="px-2 py-1.5 font-bold text-red-500 text-right text-xs">${utils.formatCurrency(row.outstanding)}</td>
                             <td class="px-2 py-1.5 font-bold text-gray-800 text-right text-xs bg-gray-50">${utils.formatCurrency(totalDayPayment)}</td>
                         </tr>
                     `;
@@ -1203,11 +1201,10 @@ window.app = {
                     <tr>
                         <td class="px-2 py-3 text-right uppercase tracking-wider text-gray-800 bg-gray-100 border-t-2 border-gray-300 font-bold text-xs">Total</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-indigo-800 text-xs">${utils.formatCurrency(gSales)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-gray-800 text-xs">${utils.formatCurrency(gOut)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-emerald-700 text-xs">${utils.formatCurrency(gProfit)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-rose-700 text-xs">${gFees > 0 ? '-' + utils.formatCurrency(gFees) : '-'}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-purple-700 text-xs">${gMargin.toFixed(1)}%</td>
-                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-gray-800 text-xs">${utils.formatCurrency(gOut)}</td>
-                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-amber-700 text-xs">${utils.formatCurrency(gCredit)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-red-600 text-xs">${utils.formatCurrency(gExp)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-blue-700 text-xs">${utils.formatCurrency(gPurch)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-orange-600 text-xs">${utils.formatCurrency(gSup)}</td>
@@ -1247,13 +1244,34 @@ window.app = {
                 };
             };
 
-            // Cash Sales
+            // Cash Sales (Grouped by bill to handle partial/mixed correctly)
+            const billGroups = {};
             monthSales.forEach(s => {
-                initDate(s.date);
-                if (s.method === 'Cash' && s.paymentStatus !== 'Pending') {
-                    cashMap[s.date].cashSale += (s.total || 0);
-                } else if (s.cashAmount) {
-                    cashMap[s.date].cashSale += s.cashAmount; // For split payments or partial cash
+                const bNo = s.billNo || 'STRAY';
+                if (!billGroups[bNo]) {
+                    billGroups[bNo] = {
+                        date: s.date,
+                        total: 0,
+                        paid: s.paidAmount || 0,
+                        cash: s.cashAmount || 0,
+                        method: s.method || 'Cash'
+                    };
+                }
+                billGroups[bNo].total += (s.total || 0);
+            });
+
+            Object.values(billGroups).forEach(b => {
+                initDate(b.date);
+                const billOutstanding = Math.max(0, b.total - b.paid);
+                const settledAmount = b.total - billOutstanding;
+
+                if (b.method === 'Mixed') {
+                    cashMap[b.date].cashSale += (b.cash || 0);
+                } else {
+                    const m = (b.method === 'Cheque') ? 'QR' : b.method;
+                    if (m !== 'Visa/Master' && m !== 'Bank' && m !== 'QR' && m !== 'Credit') {
+                        cashMap[b.date].cashSale += settledAmount;
+                    }
                 }
             });
 
@@ -1387,7 +1405,9 @@ window.app = {
                 const startDate = new Date();
                 startDate.setDate(1); // Ensure we don't roll over (e.g., from Mar 30th to Feb 30th which doesn't exist)
                 startDate.setMonth(startDate.getMonth() - monthsTofetch + 1);
-                const startDateStr = startDate.toISOString().split('T')[0];
+                const sy = startDate.getFullYear();
+                const sm = String(startDate.getMonth() + 1).padStart(2, '0');
+                const startDateStr = `${sy}-${sm}-01`;
 
                 const [allExpenses, allSales] = await Promise.all([
                     db.expenses.where('date').aboveOrEqual(startDateStr).toArray(),
@@ -1401,7 +1421,7 @@ window.app = {
                     const d = new Date();
                     d.setDate(1); // Safe guard for month subtraction
                     d.setMonth(d.getMonth() - i);
-                    const k = d.toISOString().slice(0, 7);
+                    const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
                     const mName = d.toLocaleString('en-US', { month: 'short' });
                     chartDataMap[k] = { label: mName, sales: 0, profit: 0, expenses: 0 };
                     chartLabels.push(k);
@@ -1488,7 +1508,8 @@ window.app = {
                     for (let i = daysToFetch - 1; i >= 0; i--) {
                         const d = new Date();
                         d.setDate(d.getDate() - i);
-                        labels.push(d.toISOString().split('T')[0]);
+                        const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                        labels.push(k);
                     }
                 }
 

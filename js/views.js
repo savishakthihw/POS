@@ -3893,161 +3893,14 @@ var views = window.views = {
     },
 
     loadCreditPendingBills: async (month = '', search = '') => {
-        let container = document.getElementById('credit-pending-bills-section');
-        if (!container) {
-            const posView = document.getElementById('view-pos');
-            if (!posView) return;
-
-            const currentMonth = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
-            month = month || currentMonth;
-
-            container = document.createElement('div');
-            container.id = 'credit-pending-bills-section';
-            container.className = 'mt-6 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden';
-            container.innerHTML = `
-                <div class="p-4 border-b border-gray-50 flex flex-col md:flex-row justify-between items-start md:items-center bg-gray-50 gap-4">
-                    <h4 class="font-bold text-gray-800 flex items-center gap-2">
-                        <i class="fa-solid fa-clock text-blue-500"></i> Credit Bill Pending
-                    </h4>
-                    <div class="flex flex-wrap gap-2 items-center w-full md:w-auto">
-                        <input type="month" id="credit-pending-search-month" 
-                         class="px-3 py-1.5 bg-white border border-gray-200 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500 font-medium"
-                         value="${currentMonth}"
-                         onchange="views.loadCreditPendingBills(this.value, document.getElementById('credit-pending-search-query')?.value)">
-                        <input type="text" id="credit-pending-search-query" placeholder="Customer Name..." 
-                         class="px-3 py-1.5 bg-white border border-gray-200 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500"
-                         oninput="views.loadCreditPendingBills(document.getElementById('credit-pending-search-month').value, this.value)">
-                        <span class="text-xs text-gray-400 bg-white px-3 py-1.5 rounded-full border border-gray-200" id="credit-pending-count">0 Records</span>
-                    </div>
-                </div>
-                <div class="overflow-x-auto max-h-[400px]">
-                    <table class="w-full text-sm text-left">
-                        <thead class="bg-gray-50 text-xs text-gray-400 uppercase tracking-wider sticky top-0 border-b border-gray-100">
-                            <tr>
-                                <th class="px-6 py-3 bg-gray-50">Date</th>
-                                <th class="px-6 py-3 bg-gray-50">Customer Ref</th>
-                                <th class="px-6 py-3 bg-gray-50 text-center">Items</th>
-                                <th class="px-6 py-3 bg-gray-50 text-right">Total Amount</th>
-                                <th class="px-6 py-3 bg-gray-50 text-center">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="credit-pending-bills-body" class="divide-y divide-gray-50">
-                        </tbody>
-                        <tfoot class="bg-blue-50/50 font-bold border-t border-blue-100 text-gray-800 sticky bottom-0">
-                            <tr>
-                                <td colspan="3" class="px-6 py-3 text-right uppercase tracking-wider text-xs text-blue-800 bg-blue-50/90 backdrop-blur">Total Pending:</td>
-                                <td class="px-6 py-3 text-right text-sm text-blue-700 font-black bg-blue-50/90 backdrop-blur" id="credit-pending-total">Rs. 0.00</td>
-                                <td class="px-6 py-3 bg-blue-50/90 backdrop-blur"></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            `;
-            posView.appendChild(container);
+        const container = document.getElementById('credit-pending-bills-section');
+        if (container) {
+            container.remove();
         }
-
-        const tbody = document.getElementById('credit-pending-bills-body');
-        const countBadge = document.getElementById('credit-pending-count');
-        const totalCell = document.getElementById('credit-pending-total');
-
-        let pendingBills = await db.credit_pending_bills.orderBy('timestamp').reverse().toArray();
-
-        if (month) {
-            pendingBills = pendingBills.filter(b => {
-                const d = new Date(b.timestamp);
-                const mStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-                return mStr === month;
-            });
-        }
-
-        if (search) {
-            const q = search.toLowerCase();
-            pendingBills = pendingBills.filter(b => 
-                (b.customerName || '').toLowerCase().includes(q)
-            );
-        }
-
-        if (countBadge) countBadge.innerText = `${pendingBills.length} Records`;
-
-        let totalAmount = 0;
-
-        if (pendingBills.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-8 text-gray-400 italic">No credit pending bills currently</td></tr>`;
-            if (totalCell) totalCell.innerText = 'Rs. 0.00';
-            return;
-        }
-
-        tbody.innerHTML = pendingBills.map(bill => {
-            totalAmount += bill.total || 0;
-            return `
-            <tr class="hover:bg-blue-50 transition-colors">
-                <td class="px-6 py-4 text-gray-500 font-mono text-xs">
-                    ${new Date(bill.timestamp).toLocaleDateString()}
-                    <div class="text-[10px] text-gray-400">${new Date(bill.timestamp).toLocaleTimeString()}</div>
-                </td>
-                <td class="px-6 py-4 font-bold text-gray-800">${bill.customerName || 'Walk-in Customer'}</td>
-                <td class="px-6 py-4 text-center">
-                    <span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">${bill.itemCount}</span>
-                </td>
-                <td class="px-6 py-4 text-right font-mono font-bold text-indigo-600">${utils.formatCurrency(bill.total)}</td>
-                <td class="px-6 py-4 text-center space-x-2">
-                    <button onclick="views.printCreditPendingBill(${bill.id})" class="bg-blue-50 text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" title="Print Bill">
-                        <i class="fa-solid fa-print"></i>
-                    </button>
-                    <button onclick="views.downloadCreditPendingBillAsImage(${bill.id})" class="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" title="WhatsApp / Download Image">
-                        <i class="fa-brands fa-whatsapp"></i>
-                    </button>
-                    <button onclick="views.restoreCreditPendingBill(${bill.id})" class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" title="Resume">
-                        <i class="fa-solid fa-play mr-1"></i> Resume
-                    </button>
-                    <button onclick="views.removeCreditPendingBill(${bill.id})" class="bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors" title="Remove">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </td>
-            </tr>
-            `;
-        }).join('');
-        
-        if (totalCell) totalCell.innerText = utils.formatCurrency(totalAmount);
+        return;
     },
 
-    restoreCreditPendingBill: async (id) => {
-        if (window.posCart.length > 0) {
-            if (!confirm('Current cart is not empty. Replace it with credit pending bill?')) return;
-        }
-
-        const bill = await db.credit_pending_bills.get(id);
-        if (!bill) {
-            utils.showNotification('Bill not found', 'error');
-            views.loadCreditPendingBills();
-            return;
-        }
-
-        // Restore Cart
-        window.posCart = bill.cartData.cart;
-
-        // Restore Discount if saved
-        const discountInput = document.getElementById('bill-discount');
-        if (discountInput) {
-            discountInput.value = bill.cartData.discount || '';
-        }
-
-        // Restore Customer if saved
-        const customerInput = document.getElementById('pos-customer');
-        if (customerInput) {
-            customerInput.value = bill.cartData.customer || bill.customerName || '';
-        }
-
-        // Remove from credit pending bills
-        await db.credit_pending_bills.delete(id);
-
-        // Optional: Pre-select Credit payment method? The user said "aluth bill ekak widiyata sale eka add karanda puluwan", 
-        // usually they will pay cash when resuming. So leaving it as Cash is better.
-
-        views.renderCart();
-        views.loadCreditPendingBills();
-        utils.showNotification('Credit Pending Bill Resumed Successfully');
-    },
+    restoreCreditPendingBill: async (id) => { return; },
 
     printCreditPendingBill: async (id) => {
         try {
@@ -4366,17 +4219,13 @@ var views = window.views = {
         }
     },
 
-    removeCreditPendingBill: async (id) => {
-        const pwd = prompt('🔒 Admin Password Required\n\nEnter password to delete this credit pending bill:');
-        if (pwd === null) return; // Cancelled
-        if (pwd !== '8542074') {
-            utils.showNotification('Incorrect password. Delete cancelled.', 'error');
-            return;
-        }
-        await db.credit_pending_bills.delete(id);
-        views.loadCreditPendingBills();
-        utils.showNotification('Credit pending bill discarded');
-    },
+    printCreditPendingBill: async (id) => { return; },
+
+    downloadCreditPendingBillAsImage: async (id) => { return; },
+
+    removeCreditPendingBill: async (id) => { return; },
+
+    restoreCreditPendingBill: async (id) => { return; },
 
     addToCart: async (itemId) => {
         // Robust item lookup (Handle String vs Number ID & Case Insensitivity)
@@ -4930,69 +4779,7 @@ var views = window.views = {
         }
     },
 
-    holdCreditBill: async () => {
-        if (window.posCart.length === 0) {
-            utils.showNotification('Cart is empty', 'error');
-            return;
-        }
-
-        const customerInput = document.getElementById('pos-customer');
-        let customerName = customerInput ? customerInput.value.trim() : '';
-        if (!customerName || customerName.toLowerCase() === 'walk-in') {
-            customerName = prompt('Enter Customer Name for Credit Bill:', '');
-            if (customerName === null) return; // Cancelled
-        }
-
-        const subtotal = window.posCart.reduce((sum, i) => sum + i.total, 0);
-        const discount = parseFloat(document.getElementById('bill-discount').value) || 0;
-        const total = subtotal - discount;
-
-        const customDateInput = document.getElementById('pos-custom-date');
-        let billTimestamp = Date.now();
-        if (customDateInput && customDateInput.value) {
-            billTimestamp = new Date(customDateInput.value).getTime();
-        }
-
-        const billData = {
-            timestamp: billTimestamp,
-            customerName: customerName || 'Walk-in',
-            itemCount: window.posCart.reduce((acc, item) => acc + item.qty, 0),
-            total: total,
-            cartData: {
-                cart: window.posCart,
-                discount: discount,
-                customer: customerName
-            }
-        };
-
-        try {
-            await db.credit_pending_bills.add(billData);
-
-            // Clear current cart
-            window.posCart = [];
-            const discountInput = document.getElementById('bill-discount');
-            if (discountInput) discountInput.value = '';
-
-            const paidInput = document.getElementById('bill-paid');
-            if (paidInput) paidInput.value = '';
-            document.getElementById('bill-balance').innerText = 'Rs. 0.00';
-            if (customerInput) customerInput.value = '';
-
-            // Reset payment method to Cash
-            const cashRadio = document.querySelector('input[name="payment-method"][value="Cash"]');
-            if (cashRadio) {
-                cashRadio.checked = true;
-                cashRadio.dispatchEvent(new Event('change'));
-            }
-
-            views.renderCart();
-            views.loadCreditPendingBills();
-            utils.showNotification('Credit Bill saved to pending', 'success');
-        } catch (err) {
-            console.error('Hold Credit Bill Error:', err);
-            utils.showNotification('Failed to save credit bill', 'error');
-        }
-    },
+    holdCreditBill: async () => { return; },
 
 
     processCheckout: async (shouldPrint = true) => {
@@ -5018,10 +4805,7 @@ var views = window.views = {
         const finalTotal = subtotal - discount;
         const paymentMethod = document.querySelector('input[name="payment-method"]:checked')?.value || 'Cash';
 
-        if (paymentMethod === 'Credit') {
-            await views.holdCreditBill();
-            return;
-        }
+        // Credit method check removed: Credit sales now process as normal pending sales
 
         // NEW: Check for ADMIN custom date override
         const customDateInput = document.getElementById('pos-custom-date');
@@ -5572,6 +5356,11 @@ var views = window.views = {
 
     settleBill: async (billNo) => {
         if (!confirm('Mark BILL ' + billNo + ' as FULLY RECEIVED/SETTLED?')) return;
+        
+        const defaultDate = new Date().toISOString().split('T')[0];
+        const settleDate = prompt(`Enter Payment Received Date for Bill ${billNo}:`, defaultDate);
+        if (!settleDate) return; // User cancelled
+
         try {
             // Find all pending sales for this bill
             const billItems = await db.sales.where('billNo').equals(billNo).toArray();
@@ -5586,7 +5375,7 @@ var views = window.views = {
             const updates = pendingItems.map(item => {
                 return db.sales.update(item.id, {
                     paymentStatus: 'Paid',
-                    settledDate: new Date().toISOString().split('T')[0]
+                    settledDate: settleDate
                 });
             });
             await Promise.all(updates);
@@ -7782,7 +7571,7 @@ var views = window.views = {
             const tables = [
                 'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 'purchases',
                 'credit_settlements', 'credit_settlements_archive', 'reload_bills', 'reload_bills_archive',
-                'settings', 'held_bills', 'credit_pending_bills', 'item_batches', 'audit_logs', 'users', 
+                'settings', 'held_bills', 'item_batches', 'audit_logs', 'users', 
                 'sales_archive', 'stock_in_archive', 'purchases_archive', 'expenses_archive', 'closing_balances'
             ];
             
@@ -8114,7 +7903,7 @@ var views = window.views = {
                 await db.transaction('rw', 
                     db.item_master, db.inventory, db.stock_in, db.sales, db.quotations, db.expenses, db.purchases, 
                     db.credit_settlements, db.credit_settlements_archive, db.reload_bills, db.reload_bills_archive,
-                    db.settings, db.held_bills, db.credit_pending_bills, db.item_batches, db.audit_logs, db.users, 
+                    db.settings, db.held_bills, db.item_batches, db.audit_logs, db.users, 
                     db.sales_archive, db.stock_in_archive, db.purchases_archive, db.expenses_archive, db.closing_balances, 
                     async () => {
                     // Clear all tables
@@ -8132,7 +7921,6 @@ var views = window.views = {
                         db.reload_bills_archive.clear(),
                         db.settings.clear(),
                         db.held_bills.clear(),
-                        db.credit_pending_bills.clear(),
                         db.item_batches.clear(),
                         db.users.clear(),
                         db.audit_logs.clear(),
@@ -8147,7 +7935,7 @@ var views = window.views = {
                     const { 
                         item_master, inventory, stock_in, sales, quotations, expenses, purchases, 
                         credit_settlements, credit_settlements_archive, reload_bills, reload_bills_archive,
-                        settings, held_bills, credit_pending_bills, item_batches, audit_logs, users, 
+                        settings, held_bills, item_batches, audit_logs, users, 
                         sales_archive, stock_in_archive, purchases_archive, expenses_archive, closing_balances 
                     } = backup.data;
 
@@ -8164,7 +7952,6 @@ var views = window.views = {
                     if (reload_bills_archive?.length) await db.reload_bills_archive.bulkPut(reload_bills_archive);
                     if (settings?.length) await db.settings.bulkPut(settings);
                     if (held_bills?.length) await db.held_bills.bulkPut(held_bills);
-                    if (credit_pending_bills?.length) await db.credit_pending_bills.bulkPut(credit_pending_bills);
                     if (item_batches?.length) await db.item_batches.bulkPut(item_batches);
                     if (audit_logs?.length) await db.audit_logs.bulkPut(audit_logs);
                     if (users?.length) await db.users.bulkPut(users);
@@ -9012,11 +8799,10 @@ var views = window.views = {
                                     <tr>
                                         <th class="px-2 py-2 w-16">Date</th>
                                         <th class="px-2 py-2 text-right">Sales</th>
+                                        <th class="px-2 py-2 text-right">Outstanding</th>
                                         <th class="px-2 py-2 text-right">Profit</th>
                                         <th class="px-2 py-2 text-right">Fees</th>
                                         <th class="px-2 py-2 text-right">Margin</th>
-                                        <th class="px-2 py-2 text-right">Outstanding</th>
-                                        <th class="px-2 py-2 text-right">Credit Bill</th>
                                         <th class="px-2 py-2 text-right">Expenses</th>
                                         <th class="px-2 py-2 text-right">Purchase</th>
                                         <th class="px-2 py-2 text-right">Sup. Settlement</th>
@@ -9024,7 +8810,7 @@ var views = window.views = {
                                     </tr>
                                 </thead>
                                 <tbody id="report-daily-summary-body" class="divide-y divide-gray-50">
-                                    <tr><td colspan="11" class="px-4 py-8 text-center text-gray-400">Loading daily summary...</td></tr>
+                                    <tr><td colspan="10" class="px-4 py-8 text-center text-gray-400">Loading daily summary...</td></tr>
                                 </tbody>
                                 <tfoot id="report-daily-summary-foot" class="bg-gray-50 border-t-2 border-gray-200"></tfoot>
                             </table>
