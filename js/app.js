@@ -1099,8 +1099,12 @@ window.app = {
 
             // Process Purchases
             monthPurchases.forEach(p => {
-                initDate(p.date);
-                summaryMap[p.date].purchase += (p.totalBill || 0);
+                let method = p.method || 'Cash';
+                if (method === 'Visa/Master') method = 'Bank';
+                if (method === 'Cash' || method === 'Bank' || method === 'DF') {
+                    initDate(p.date);
+                    summaryMap[p.date].purchase += (p.totalBill || 0);
+                }
             });
 
             // Process Reload/Bills

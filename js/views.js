@@ -9315,9 +9315,14 @@ var views = window.views = {
                     yearPurchases.forEach(p => {
                         const m = p.date.substring(0, 7);
                         initMonth(m);
-                        monthlyData[m].purchase += (p.totalBill || 0);
+                        
                         let method = p.method || 'Cash';
                         if (method === 'Visa/Master') method = 'Bank';
+                        
+                        if (method === 'Cash' || method === 'Bank' || method === 'DF') {
+                            monthlyData[m].purchase += (p.totalBill || 0);
+                        }
+                        
                         if (monthlyData[m].purchaseByMethod[method] !== undefined) {
                             monthlyData[m].purchaseByMethod[method] += (p.totalBill || 0);
                         } else {
@@ -9399,12 +9404,11 @@ var views = window.views = {
                         </tr>
                     ` : '';
 
-                    let tPCash = 0, tPCheque = 0, tPCredit = 0, tPBank = 0, tPDF = 0, tPTotal = 0;
+                    let tPCash = 0, tPCredit = 0, tPBank = 0, tPDF = 0, tPTotal = 0;
                     const purchRows = validMonthKeys.map(m => {
                         const d = monthlyData[m];
                         const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
                         tPCash += d.purchaseByMethod.Cash;
-                        tPCheque += d.purchaseByMethod.Cheque;
                         tPCredit += d.purchaseByMethod.Credit;
                         tPBank += d.purchaseByMethod.Bank;
                         tPDF += d.purchaseByMethod.DF;
@@ -9414,7 +9418,6 @@ var views = window.views = {
                             <tr class="hover:bg-gray-50 transition-colors">
                                 <td class="px-3 py-1.5 font-bold text-gray-700 text-center">${mName}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Cash)}</td>
-                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Cheque)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Credit)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Bank)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.DF)}</td>
@@ -9427,7 +9430,6 @@ var views = window.views = {
                         <tr class="bg-gray-100 font-bold border-t-2 border-gray-200">
                             <td class="px-3 py-2 text-gray-800 text-center uppercase tracking-wider">Total</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPCash)}</td>
-                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPCheque)}</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPCredit)}</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPBank)}</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPDF)}</td>
@@ -9435,12 +9437,11 @@ var views = window.views = {
                         </tr>
                     ` : '';
 
-                    let tSCash = 0, tSCheque = 0, tSBank = 0, tSDF = 0, tSTotal = 0;
+                    let tSCash = 0, tSBank = 0, tSDF = 0, tSTotal = 0;
                     const settleRows = validMonthKeys.map(m => {
                         const d = monthlyData[m];
                         const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
                         tSCash += d.settleByMethod.Cash;
-                        tSCheque += d.settleByMethod.Cheque;
                         tSBank += d.settleByMethod.Bank;
                         tSDF += d.settleByMethod.DF;
                         tSTotal += d.supSettlement;
@@ -9449,7 +9450,6 @@ var views = window.views = {
                             <tr class="hover:bg-gray-50 transition-colors">
                                 <td class="px-3 py-1.5 font-bold text-gray-700 text-center">${mName}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.settleByMethod.Cash)}</td>
-                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.settleByMethod.Cheque)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.settleByMethod.Bank)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.settleByMethod.DF)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono font-bold text-gray-800">${utils.formatNumber(d.supSettlement)}</td>
@@ -9461,7 +9461,6 @@ var views = window.views = {
                         <tr class="bg-gray-100 font-bold border-t-2 border-gray-200">
                             <td class="px-3 py-2 text-gray-800 text-center uppercase tracking-wider">Total</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tSCash)}</td>
-                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tSCheque)}</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tSBank)}</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tSDF)}</td>
                             <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tSTotal)}</td>
@@ -9504,7 +9503,6 @@ var views = window.views = {
                                     <tr>
                                         <th class="px-3 py-2 text-center w-24">Month</th>
                                         <th class="px-3 py-2 text-right">Cash</th>
-                                        <th class="px-3 py-2 text-right">Cheque</th>
                                         <th class="px-3 py-2 text-right">Credit</th>
                                         <th class="px-3 py-2 text-right">Bank</th>
                                         <th class="px-3 py-2 text-right">DF</th>
@@ -9527,7 +9525,6 @@ var views = window.views = {
                                     <tr>
                                         <th class="px-3 py-2 text-center w-24">Month</th>
                                         <th class="px-3 py-2 text-right">Cash</th>
-                                        <th class="px-3 py-2 text-right">Cheque</th>
                                         <th class="px-3 py-2 text-right">Bank</th>
                                         <th class="px-3 py-2 text-right">DF</th>
                                         <th class="px-3 py-2 text-right text-teal-700 font-bold">Total</th>
