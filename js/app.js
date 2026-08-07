@@ -1310,10 +1310,13 @@ window.app = {
                 cashMap[r.date].reloadTotal += (r.total || 0);
             });
 
-            // Cash Expenses (Assuming all expenses are cash unless specified, but schema has no method. We assume all cash for expenses as per user request)
+            // Cash Expenses
             monthExpenses.forEach(e => {
-                initDate(e.date);
-                cashMap[e.date].cashExpenses += (e.amount || 0);
+                const method = e.paymentType || 'Cash';
+                if (method === 'Cash') {
+                    initDate(e.date);
+                    cashMap[e.date].cashExpenses += (e.amount || 0);
+                }
             });
 
             // Cash Purchase
