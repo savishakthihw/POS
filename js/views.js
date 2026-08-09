@@ -5355,12 +5355,6 @@ var views = window.views = {
     },
 
     settleBill: async (billNo) => {
-        if (!confirm('Mark BILL ' + billNo + ' as FULLY RECEIVED/SETTLED?')) return;
-        
-        const defaultDate = new Date().toISOString().split('T')[0];
-        const settleDate = prompt(`Enter Payment Received Date for Bill ${billNo}:`, defaultDate);
-        if (!settleDate) return; // User cancelled
-
         try {
             // Find all pending sales for this bill
             const billItems = await db.sales.where('billNo').equals(billNo).toArray();
@@ -5371,31 +5365,132 @@ var views = window.views = {
                 return;
             }
 
-            // Update all to Paid
-            const updates = pendingItems.map(item => {
-                return db.sales.update(item.id, {
-                    paymentStatus: 'Paid',
-                    settledDate: settleDate
-                });
-            });
-            await Promise.all(updates);
-
-            utils.showNotification('Bill ' + billNo + ' marked as SETTLED', 'success');
-
-            // Refresh Reports if currently on Reports view
-            if (document.getElementById('view-reports') && !document.getElementById('view-reports').classList.contains('hidden')) {
-                views.initReports();
+            let total = 0;
+            let paid = 0;
+            billItems.forEach(i => total += (i.total || 0));
+            if (billItems.length > 0) {
+                paid = billItems[0].paidAmount || 0;
             }
-            // Refresh Sales if currently on Sales view
-            if (document.getElementById('view-sales') && !document.getElementById('view-sales').classList.contains('hidden')) {
-                views.loadSalesTable();
+            let due = total - paid;
+            if (due <= 0) {
+                 utils.showNotification('This bill is already fully paid.', 'warning');
+                 return;
             }
 
-            if (typeof app !== 'undefined' && app.updateDashboard) app.updateDashboard();
+            const defaultDate = new Date().toISOString().split('T')[0];
+
+            // Create modal
+            const modalHTML = `
+                <div id="settle-bill-modal" class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-[9999] flex items-center justify-center">
+                    <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-fade-in-up">
+                        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                            <h3 class="font-bold text-gray-800 text-lg">Settle Payment</h3>
+                            <button onclick="document.getElementById('settle-bill-modal').remove()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Bill Number</label>
+                                <input type="text" value="${billNo}" disabled class="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl font-mono text-gray-700 font-bold focus:outline-none">
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Total Due</label>
+                                    <div class="w-full px-4 py-2 bg-red-50 border border-red-100 rounded-xl font-mono text-red-600 font-bold">${utils.formatCurrencyNoCents(due)}</div>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Payment Date</label>
+                                    <input type="date" id="settle-modal-date" value="${defaultDate}" class="w-full px-4 py-2 border border-gray-200 rounded-xl text-gray-700 font-bold focus:outline-none focus:border-indigo-500 transition-colors">
+                                </div>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Payment Method</label>
+                                    <select id="settle-modal-method" class="w-full px-4 py-2 border border-gray-200 rounded-xl text-gray-700 font-bold focus:outline-none focus:border-indigo-500 transition-colors bg-white">
+                                        <option value="Cash">Cash</option>
+                                        <option value="Card">Card</option>
+                                        <option value="Bank">Bank</option>
+                                        <option value="QR">QR</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Amount Paid (Rs.)</label>
+                                    <input type="number" id="settle-modal-amount" value="${due}" max="${due}" min="1" step="0.01" class="w-full px-4 py-2 border border-gray-200 rounded-xl font-mono text-gray-700 font-bold focus:outline-none focus:border-indigo-500 transition-colors">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                            <button onclick="document.getElementById('settle-bill-modal').remove()" class="px-5 py-2 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-200 transition-colors">Cancel</button>
+                            <button id="settle-modal-submit" class="px-5 py-2 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md transition-colors flex items-center gap-2">
+                                <i class="fa-solid fa-check"></i> Settle Payment
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Remove old if exists
+            const oldModal = document.getElementById('settle-bill-modal');
+            if (oldModal) oldModal.remove();
+
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+            document.getElementById('settle-modal-submit').onclick = async () => {
+                const sDate = document.getElementById('settle-modal-date').value;
+                const sMethod = document.getElementById('settle-modal-method').value;
+                const sAmount = parseFloat(document.getElementById('settle-modal-amount').value);
+
+                if (!sDate || isNaN(sAmount) || sAmount <= 0) {
+                    utils.showNotification('Please enter a valid date and amount.', 'warning');
+                    return;
+                }
+                
+                if (sAmount > due + 0.01) {
+                     utils.showNotification('Amount paid cannot exceed Total Due.', 'warning');
+                     return;
+                }
+
+                // Close modal
+                document.getElementById('settle-bill-modal').remove();
+
+                try {
+                    const newPaid = paid + sAmount;
+                    const newStatus = (newPaid >= total - 0.01) ? 'Paid' : 'Pending';
+                    
+                    const updates = billItems.map(item => {
+                        return db.sales.update(item.id, {
+                            paymentStatus: newStatus,
+                            paidAmount: newPaid,
+                            settledDate: sDate,
+                            settleMethod: sMethod
+                        });
+                    });
+                    await Promise.all(updates);
+                    
+                    utils.showNotification(`Bill ${billNo} payment updated via ${sMethod}`, 'success');
+
+                    // Refresh Reports if currently on Reports view
+                    if (document.getElementById('view-reports') && !document.getElementById('view-reports').classList.contains('hidden')) {
+                        views.initReports();
+                    }
+                    // Refresh Sales if currently on Sales view
+                    if (document.getElementById('view-sales') && !document.getElementById('view-sales').classList.contains('hidden')) {
+                        views.loadSalesTable();
+                    }
+
+                    if (typeof app !== 'undefined' && app.updateDashboard) app.updateDashboard();
+                } catch (err) {
+                    console.error('Bill Settlement Error:', err);
+                    utils.showNotification('Failed to update bill status', 'error');
+                }
+            };
 
         } catch (err) {
-            console.error('Bill Settlement Error:', err);
-            utils.showNotification('Failed to update bill status', 'error');
+            console.error('Bill Settlement Load Error:', err);
+            utils.showNotification('Failed to load bill data', 'error');
         }
     },
 
@@ -9836,7 +9931,7 @@ var views = window.views = {
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-gray-100 gap-4">
                     <div>
                         <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                            <i class="fa-solid fa-mobile-screen-button text-fuchsia-600"></i> Reload / Bill Management
+                            <i class="fa-solid fa-mobile-screen-button text-fuchsia-600"></i> Reload / Bill Earnings
                         </h3>
                         <p class="text-sm text-gray-500">Track mobile reloads, utility bills, and commissions</p>
                     </div>
@@ -9881,7 +9976,8 @@ var views = window.views = {
                             </tbody>
                             <tfoot class="bg-fuchsia-50/50 font-bold border-t-2 border-fuchsia-100 text-gray-800 sticky bottom-0">
                                 <tr>
-                                    <td colspan="4" class="px-6 py-4 text-right uppercase tracking-wider text-xs text-fuchsia-800">Total:</td>
+                                    <td colspan="3" class="px-6 py-4 text-right uppercase tracking-wider text-xs text-fuchsia-800">Total:</td>
+                                    <td class="px-6 py-4 text-right text-base text-green-700 font-black" id="reload-bills-commission-total">Rs. 0.00</td>
                                     <td class="px-6 py-4 text-right text-base text-fuchsia-700 font-black" id="reload-bills-total">Rs. 0.00</td>
                                     <td class="px-6 py-4"></td>
                                 </tr>
@@ -9911,15 +10007,19 @@ var views = window.views = {
         }
 
         let totalAmount = 0;
+        let totalCommission = 0;
 
         if (records.length === 0) {
             tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-400 italic">No records found</td></tr>`;
             if (totalCell) totalCell.innerText = 'Rs. 0.00';
+            const commissionCell = document.getElementById('reload-bills-commission-total');
+            if (commissionCell) commissionCell.innerText = 'Rs. 0.00';
             return;
         }
 
         tbody.innerHTML = records.map(r => {
             totalAmount += parseFloat(r.total) || 0;
+            totalCommission += parseFloat(r.commission) || 0;
             return `
             <tr class="hover:bg-fuchsia-50 transition-colors">
                 <td class="px-6 py-4 text-gray-500 font-mono text-xs">${r.date || '-'}</td>
@@ -9940,6 +10040,8 @@ var views = window.views = {
         }).join('');
         
         if (totalCell) totalCell.innerText = utils.formatCurrency(totalAmount);
+        const commissionCell = document.getElementById('reload-bills-commission-total');
+        if (commissionCell) commissionCell.innerText = utils.formatCurrency(totalCommission);
     },
 
     openReloadBillModal: async (id = null) => {

@@ -1085,7 +1085,38 @@ window.app = {
                 }
             });
 
-            // Process Supplier Credit Settlements
+            // Add Late Settlements to Payment Breakdown based on settleMethod
+            const settledByDateBillSummary = {};
+            settledSales.forEach(s => {
+                const dateKey = (s.settledDate || '').split('T')[0];
+                if (!dateKey) return;
+                const bNo = s.billNo || 'UNKNOWN';
+                
+                if (!settledByDateBillSummary[dateKey]) settledByDateBillSummary[dateKey] = {};
+                if (!settledByDateBillSummary[dateKey][bNo]) {
+                    settledByDateBillSummary[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), settleMethod: s.settleMethod || 'Cash' };
+                }
+                settledByDateBillSummary[dateKey][bNo].total += (s.total || 0);
+            });
+
+            for (const dateKey in settledByDateBillSummary) {
+                initDate(dateKey);
+                for (const bNo in settledByDateBillSummary[dateKey]) {
+                    const b = settledByDateBillSummary[dateKey][bNo];
+                    const due = b.total - b.paid;
+                    if (due > 0) {
+                        if (b.settleMethod === 'Visa/Master' || b.settleMethod === 'Card') {
+                            summaryMap[dateKey].card += due;
+                        } else if (b.settleMethod === 'Bank') {
+                            summaryMap[dateKey].bank += due;
+                        } else if (b.settleMethod === 'QR' || b.settleMethod === 'Cheque') {
+                            summaryMap[dateKey].qr += due;
+                        } else {
+                            summaryMap[dateKey].cash += due;
+                        }
+                    }
+                }
+            }
             monthCreditSettlements.forEach(s => {
                 initDate(s.dateSettled);
                 summaryMap[s.dateSettled].supSettlement += (s.amount || 0);
@@ -1288,7 +1319,7 @@ window.app = {
                 
                 if (!settledByDateBill[dateKey]) settledByDateBill[dateKey] = {};
                 if (!settledByDateBill[dateKey][bNo]) {
-                    settledByDateBill[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0) };
+                    settledByDateBill[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), settleMethod: s.settleMethod || 'Cash' };
                 }
                 settledByDateBill[dateKey][bNo].total += (s.total || 0);
             });
@@ -1299,7 +1330,9 @@ window.app = {
                     const b = settledByDateBill[dateKey][bNo];
                     const due = b.total - b.paid;
                     if (due > 0) {
-                        cashMap[dateKey].outstandingPaid += due;
+                        if (b.settleMethod === 'Cash' || !b.settleMethod) {
+                            cashMap[dateKey].outstandingPaid += due;
+                        }
                     }
                 }
             }
