@@ -441,15 +441,7 @@ window.app = {
         const shouldDownloadCsvs = confirm('📊 DAILY REPORTS\n\nWould you like to download Today\'s CSV Reports (Sales, Stock-in, Inventory, Purchases, Expenses) before turning off?');
         if (shouldDownloadCsvs && window.views && views.downloadDailyCSVs) {
             await views.downloadDailyCSVs();
-        }
-
-        // --- NEW: Incremental Cloud Sync on Shutdown ---
-        if (navigator.onLine) {
-            const shouldCloudSync = confirm('☁️ CLOUD SYNC\n\nWould you like to UPLOAD new data to the Cloud before turning off?');
-            if (shouldCloudSync) {
-                if (statusText) statusText.innerText = 'Syncing new data to Firebase Cloud...';
-                await cloudSync.uploadAll(true); // Silent sync
-            }
+           // --- Automatic Cloud Sync on Shutdown Disabled per User Request ---
         }
 
         // Final shutdown transition

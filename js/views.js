@@ -658,7 +658,8 @@ var views = window.views = {
 
             await db.item_batches.update(batch.id, {
                 costPrice,
-                listPrice
+                listPrice,
+                updatedAt: new Date().toISOString() // CRITICAL: Required for cloud incremental sync
             });
             
             // Re-sync master price in case this was the active/latest batch
@@ -1355,11 +1356,13 @@ var views = window.views = {
 
                     // 2. Handle Batches (Always do this now, and ensure useBatch is true)
                     const existingBatch = await db.item_batches.where({ itemId: item.itemId, batchId: finalBatchId }).first();
+                    const nowTs = new Date().toISOString();
                     if (existingBatch) {
                         await db.item_batches.update(existingBatch.id, {
                             costPrice: cost,
                             listPrice: mrp,
-                            currentStock: (existingBatch.currentStock || 0) + qty
+                            currentStock: (existingBatch.currentStock || 0) + qty,
+                            updatedAt: nowTs
                         });
                     } else {
                         await db.item_batches.add({
@@ -1368,7 +1371,8 @@ var views = window.views = {
                             costPrice: cost,
                             listPrice: mrp,
                             currentStock: qty,
-                            isDiscontinued: false
+                            isDiscontinued: false,
+                            updatedAt: nowTs
                         });
                     }
 
@@ -1377,7 +1381,8 @@ var views = window.views = {
                         costPrice: Number(cost),
                         listPrice: Number(mrp),
                         useBatch: true,
-                        batchId: String(finalBatchId) // Update main tracking batch
+                        batchId: String(finalBatchId), // Update main tracking batch
+                        updatedAt: nowTs // CRITICAL: Required for cloud incremental sync to detect this change
                     });
 
                     // 4. Update Inventory
@@ -1784,7 +1789,8 @@ var views = window.views = {
                 costPrice: finalCost,
                 listPrice: finalMRP,
                 batchId: finalBatchId,
-                useBatch: true
+                useBatch: true,
+                updatedAt: new Date().toISOString() // CRITICAL: Required for cloud incremental sync
             });
             app.itemCache = []; // Invalidate cache
         } catch (err) {
@@ -2111,7 +2117,8 @@ var views = window.views = {
                 if (oldBatch) {
                     await db.item_batches.update(oldBatch.id, {
                         initialStock: (oldBatch.initialStock || 0) - oldEntry.qty,
-                        currentStock: (oldBatch.currentStock || 0) - oldEntry.qty
+                        currentStock: (oldBatch.currentStock || 0) - oldEntry.qty,
+                        updatedAt: new Date().toISOString()
                     });
                 }
             }
@@ -2124,7 +2131,8 @@ var views = window.views = {
                         costPrice: finalCost,
                         listPrice: finalMRP,
                         initialStock: (targetBatch.initialStock || 0) + newQty,
-                        currentStock: (targetBatch.currentStock || 0) + newQty
+                        currentStock: (targetBatch.currentStock || 0) + newQty,
+                        updatedAt: new Date().toISOString()
                     });
                 } else {
                     // Create new batch record if it doesn't exist
@@ -2134,7 +2142,8 @@ var views = window.views = {
                         costPrice: finalCost,
                         listPrice: finalMRP,
                         initialStock: newQty,
-                        currentStock: newQty
+                        currentStock: newQty,
+                        updatedAt: new Date().toISOString()
                     });
                 }
             }
@@ -8365,6 +8374,7 @@ var views = window.views = {
                                     <th class="px-3 py-4 w-28">Invoice No</th>
                                     <th class="px-3 py-4">Supplier</th>
                                     <th class="px-3 py-4 w-40">Method</th>
+                                    <th class="px-3 py-4 w-32">Type</th>
                                     <th class="px-3 py-4 text-right w-24">Total</th>
                                     <th class="px-3 py-4 text-right w-24">Paid</th>
                                     <th class="px-3 py-4 text-right w-24">Balance</th>
@@ -8430,6 +8440,12 @@ var views = window.views = {
 
         document.getElementById('purchase-settle-date-container').classList.add('hidden');
         document.getElementById('purchase-cheque-details').classList.add('hidden');
+        
+        if (document.getElementById('purchase-type')) {
+            document.getElementById('purchase-type').value = 'Stock';
+            document.getElementById('purchase-type-other').value = '';
+            document.getElementById('purchase-type-other').classList.add('hidden');
+        }
 
         // Fetch supplier IDs
         const allItems = await db.item_master.toArray();
@@ -8500,6 +8516,18 @@ var views = window.views = {
         document.getElementById('purchase-balance').value = pur.balance;
         document.getElementById('purchase-method').value = pur.method;
 
+        if (pur.type && pur.type !== 'Stock') {
+            document.getElementById('purchase-type').value = 'Other';
+            document.getElementById('purchase-type-other').value = pur.type;
+            document.getElementById('purchase-type-other').classList.remove('hidden');
+            document.getElementById('purchase-type-other').required = true;
+        } else {
+            document.getElementById('purchase-type').value = 'Stock';
+            document.getElementById('purchase-type-other').value = '';
+            document.getElementById('purchase-type-other').classList.add('hidden');
+            document.getElementById('purchase-type-other').required = false;
+        }
+
         const settleContainer = document.getElementById('purchase-settle-date-container');
         const chequeDetails = document.getElementById('purchase-cheque-details');
 
@@ -8530,10 +8558,12 @@ var views = window.views = {
         const chequeDate = document.getElementById('purchase-cheque-date').value;
         const chequeNo = document.getElementById('purchase-cheque-no').value;
         const reminderDays = parseInt(document.getElementById('purchase-reminder-days').value) || 0;
+        const typeSelect = document.getElementById('purchase-type').value;
+        const purchaseType = typeSelect === 'Other' ? document.getElementById('purchase-type-other').value : typeSelect;
 
         const data = {
             date, supplierId, supplierName, invoiceNo, totalBill, paidAmount, balance,
-            method, settleDate, chequeDate, chequeNo, reminderDays
+            method, settleDate, chequeDate, chequeNo, reminderDays, type: purchaseType
         };
 
         try {
@@ -8636,6 +8666,7 @@ var views = window.views = {
                         ` : ''}
                     </div>
                 </td>
+                <td class="px-3 py-4 font-bold text-gray-700">${p.type || '-'}</td>
                 <td class="px-3 py-4 text-right font-bold text-gray-800">${utils.formatCurrency(p.totalBill)}</td>
                 <td class="px-3 py-4 text-right font-bold text-emerald-600">${utils.formatCurrency(p.paidAmount)}</td>
                 <td class="px-3 py-4 text-right font-bold ${p.balance > 0 ? 'text-red-600' : 'text-gray-400'}">

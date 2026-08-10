@@ -802,7 +802,7 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-3 gap-4">
                     <div>
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Payment Method</label>
                         <select id="purchase-method" class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm"
@@ -813,6 +813,18 @@
                             <option value="Bank">Bank</option>
                             <option value="DF">DF</option>
                         </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Type</label>
+                        <div class="flex flex-col gap-2">
+                           <select id="purchase-type" class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm"
+                               onchange="if(this.value==='Other'){document.getElementById('purchase-type-other').classList.remove('hidden');document.getElementById('purchase-type-other').required=true;}else{document.getElementById('purchase-type-other').classList.add('hidden');document.getElementById('purchase-type-other').required=false;}">
+                               <option value="Stock">Stock</option>
+                               <option value="Other">Other</option>
+                           </select>
+                           <input type="text" id="purchase-type-other" placeholder="Enter type"
+                               class="w-full rounded-lg border-gray-300 px-3 py-2 text-sm hidden">
+                        </div>
                     </div>
                     <div id="purchase-settle-date-container" class="hidden">
                         <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Settle Date (Credit)</label>
