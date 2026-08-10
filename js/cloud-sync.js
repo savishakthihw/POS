@@ -5,7 +5,7 @@ window.cloudSync = {
         'item_master', 'inventory', 'stock_in', 'sales', 'quotations', 'expenses', 
         'purchases', 'settings', 'item_batches', 'users', 'held_bills',
         'sales_archive', 'stock_in_archive', 'purchases_archive', 'expenses_archive', 'closing_balances', 'audit_logs',
-        'credit_settlements', 'credit_settlements_archive'
+        'credit_settlements', 'credit_settlements_archive', 'reload_bills', 'reload_bills_archive'
     ],
 
 
