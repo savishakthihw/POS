@@ -94,6 +94,106 @@ var views = window.views = {
         }
     },
 
+    exportFilteredPerformancePDF: (monthsCount) => {
+        if (!window.lastPerfMonthlyData || !window.lastPerfValidMonthKeys) return;
+        let keys = window.lastPerfValidMonthKeys;
+        if (monthsCount !== 'all') {
+            keys = keys.slice(0, parseInt(monthsCount));
+        }
+        
+        let tRev = 0, tGP = 0, tExp = 0, tNP = 0;
+        let tPurch = 0, tSup = 0, tReload = 0, tReloadCom = 0;
+        let tOut = 0, tOutPaid = 0;
+
+        const rows = keys.map(m => {
+            const d = window.lastPerfMonthlyData[m];
+            const net = d.grossProfit - d.expenses;
+            
+            tRev += (d.revenue || 0);
+            tGP += (d.grossProfit || 0);
+            tExp += (d.expenses || 0);
+            tNP += net;
+            tPurch += (d.purchase || 0);
+            tSup += (d.supSettlement || 0);
+            tReload += (d.reloadBill || 0);
+            tReloadCom += (d.reloadCom || 0);
+            tOut += (d.outstanding || 0);
+            tOutPaid += (d.outstandingPaid || 0);
+
+            const gMargin = d.revenue > 0 ? (d.grossProfit / d.revenue) * 100 : 0;
+            const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
+            const deadStockCount = (window.lastPerfAllInventory || []).filter(item => !d.soldItemIds.has(item.itemId) && item.currentStock > 0).length;
+
+            return `
+                <tr>
+                    <td>${mName}</td>
+                    <td>${utils.formatNumber(d.revenue)}</td>
+                    <td>${utils.formatNumber(d.grossProfit)}</td>
+                    <td>${gMargin.toFixed(1)}%</td>
+                    <td>${utils.formatNumber(d.expenses)}</td>
+                    <td>${utils.formatNumber(net)}</td>
+                    <td>${d.soldItemIds.size}</td>
+                    <td>${deadStockCount}</td>
+                    <td>${utils.formatNumber(d.purchase)}</td>
+                    <td>${utils.formatNumber(d.supSettlement)}</td>
+                    <td>${utils.formatNumber(d.outstanding || 0)}</td>
+                    <td>${utils.formatNumber(d.reloadCom)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        const tRow = keys.length > 0 ? `
+            <tr style="font-weight: bold; background-color: #f3f4f6;">
+                <td>Total</td>
+                <td>${utils.formatNumber(tRev)}</td>
+                <td>${utils.formatNumber(tGP)}</td>
+                <td></td>
+                <td>${utils.formatNumber(tExp)}</td>
+                <td>${utils.formatNumber(tNP)}</td>
+                <td colspan="2"></td>
+                <td>${utils.formatNumber(tPurch)}</td>
+                <td>${utils.formatNumber(tSup)}</td>
+                <td>${utils.formatNumber(tOut)}</td>
+                <td>${utils.formatNumber(tReloadCom)}</td>
+            </tr>
+        ` : '';
+
+        // Create a hidden table for export
+        const tempDiv = document.createElement('div');
+        tempDiv.style.display = 'none';
+        tempDiv.innerHTML = `
+            <table id="temp-perf-export-table">
+                <thead>
+                    <tr>
+                        <th>Month</th>
+                        <th>Rev</th>
+                        <th>Gross Profit</th>
+                        <th>GM%</th>
+                        <th>Exp</th>
+                        <th>NP</th>
+                        <th>FM Items</th>
+                        <th>Dead St</th>
+                        <th>C/B Purchase</th>
+                        <th>Credit Settle</th>
+                        <th>Outstanding</th>
+                        <th>Re/Bill Com</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                    ${tRow}
+                </tbody>
+            </table>
+        `;
+        document.body.appendChild(tempDiv);
+        
+        let titleSuffix = monthsCount === 'all' ? 'Selected Year' : (monthsCount == 1 ? 'Current Month' : 'Last ' + monthsCount + ' Months');
+        const year = document.getElementById('report-year-input') ? document.getElementById('report-year-input').value : new Date().getFullYear();
+        views.exportToPDF('temp-perf-export-table', 'Monthly Financial Performance - ' + year + ' - ' + titleSuffix);
+        
+        setTimeout(() => document.body.removeChild(tempDiv), 1000);
+    },
+
     // --- ITEM MASTER SECTION ---
     initItemMaster: async () => {
         const container = document.getElementById('view-items');
@@ -9064,25 +9164,47 @@ var views = window.views = {
                                 class="w-24 text-center text-sm font-bold bg-indigo-50 border-2 border-indigo-200 rounded-xl px-2 py-1.5 focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none text-indigo-700 shadow-sm transition-all cursor-pointer"
                                 placeholder="YYYY">
                         </div>
-                        <button onclick="views.exportToPDF('monthly-performance-table', 'Monthly Financial Performance - ' + (document.getElementById('report-year-input').value || '${app.currentReportYear}'))" class="text-[10px] bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200 transition-all flex items-center gap-1">
-                            <i class="fa-solid fa-file-pdf"></i> Download PDF
-                        </button>
+                        <div class="relative group">
+                            <button class="text-[10px] bg-gray-100 text-gray-700 px-3 py-1 rounded-lg hover:bg-gray-200 transition-all flex items-center gap-1">
+                                <i class="fa-solid fa-file-pdf text-red-500"></i> Download PDF <i class="fa-solid fa-chevron-down ml-1"></i>
+                            </button>
+                            <div class="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-100 z-50 overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+                                <button onclick="views.exportFilteredPerformancePDF('all')" class="w-full text-left px-4 py-2 text-xs hover:bg-gray-50 text-gray-700 border-b border-gray-50">Selected Year</button>
+                                <button onclick="views.exportFilteredPerformancePDF(1)" class="w-full text-left px-4 py-2 text-xs hover:bg-gray-50 text-gray-700 border-b border-gray-50">Current Month</button>
+                                <button onclick="views.exportFilteredPerformancePDF(3)" class="w-full text-left px-4 py-2 text-xs hover:bg-gray-50 text-gray-700 border-b border-gray-50">Last 3 Months</button>
+                                <button onclick="views.exportFilteredPerformancePDF(6)" class="w-full text-left px-4 py-2 text-xs hover:bg-gray-50 text-gray-700 border-b border-gray-50">Last 6 Months</button>
+                                <button onclick="views.exportFilteredPerformancePDF(12)" class="w-full text-left px-4 py-2 text-xs hover:bg-gray-50 text-gray-700">Last 12 Months</button>
+                            </div>
+                        </div>
                     </h4>
                     <div id="report-monthly-performance-container" class="overflow-x-auto min-h-[200px] flex items-center justify-center italic text-gray-400">
                          Loading historical report data for ${currentYearKey}...
                     </div>
                 </div>
 
-                <!-- 4a. Monthly Purchase Report Card -->
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-blue-100 flex flex-col mb-6">
-                    <h4 class="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide flex items-center justify-between">
-                        <span class="flex items-center gap-2"><i class="fa-solid fa-cart-shopping text-blue-500"></i> Monthly Purchase Report</span>
-                        <button onclick="views.exportToPDF('monthly-purchase-report-table', 'Monthly Purchase Report - ' + (document.getElementById('report-year-input').value || '${app.currentReportYear}'))" class="text-[10px] bg-blue-50 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-100 transition-all flex items-center gap-1">
-                            <i class="fa-solid fa-file-pdf"></i> PDF
-                        </button>
-                    </h4>
-                    <div id="report-purchase-container" class="overflow-x-auto min-h-[100px] flex items-center justify-center italic text-gray-400">
-                        Loading purchase report...
+                <!-- 4a. Monthly Purchase Reports Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-blue-100 flex flex-col">
+                        <h4 class="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide flex items-center justify-between">
+                            <span class="flex items-center gap-2"><i class="fa-solid fa-cart-shopping text-blue-500"></i> Monthly Purchase Report (Cash/Bank)</span>
+                            <button onclick="views.exportToPDF('monthly-purchase-report-table', 'Monthly Purchase Report (Cash/Bank) - ' + (document.getElementById('report-year-input').value || '${app.currentReportYear}'))" class="text-[10px] bg-blue-50 text-blue-700 px-3 py-1 rounded-lg hover:bg-blue-100 transition-all flex items-center gap-1">
+                                <i class="fa-solid fa-file-pdf"></i> PDF
+                            </button>
+                        </h4>
+                        <div id="report-purchase-container" class="overflow-x-auto min-h-[100px] flex items-center justify-center italic text-gray-400">
+                            Loading purchase report...
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-indigo-100 flex flex-col">
+                        <h4 class="font-bold text-gray-800 mb-4 text-sm uppercase tracking-wide flex items-center justify-between">
+                            <span class="flex items-center gap-2"><i class="fa-solid fa-money-check text-indigo-500"></i> Monthly Credit Report</span>
+                            <button onclick="views.exportToPDF('monthly-purchase-cheque-report-table', 'Monthly Credit Report - ' + (document.getElementById('report-year-input').value || '${app.currentReportYear}'))" class="text-[10px] bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg hover:bg-indigo-100 transition-all flex items-center gap-1">
+                                <i class="fa-solid fa-file-pdf"></i> PDF
+                            </button>
+                        </h4>
+                        <div id="report-purchase-cheque-container" class="overflow-x-auto min-h-[100px] flex items-center justify-center italic text-gray-400">
+                            Loading purchase report...
+                        </div>
                     </div>
                 </div>
 
@@ -9404,8 +9526,8 @@ var views = window.views = {
 
                     const initMonth = (m) => {
                         if (!monthlyData[m]) monthlyData[m] = { 
-                            revenue: 0, grossProfit: 0, expenses: 0, outstanding: 0, salesCost: 0, soldItemIds: new Set(),
-                            purchase: 0, supSettlement: 0, reloadBill: 0,
+                            revenue: 0, grossProfit: 0, expenses: 0, outstanding: 0, outstandingPaid: 0, salesCost: 0, soldItemIds: new Set(),
+                            purchase: 0, supSettlement: 0, reloadBill: 0, reloadCom: 0,
                             purchaseByMethod: { Cash: 0, Cheque: 0, Credit: 0, Bank: 0, DF: 0 },
                             settleByMethod: { Cash: 0, Cheque: 0, Bank: 0, DF: 0 }
                         };
@@ -9445,7 +9567,9 @@ var views = window.views = {
                         let method = p.method || 'Cash';
                         if (method === 'Visa/Master') method = 'Bank';
                         
-                        if (method === 'Cash' || method === 'Bank' || method === 'DF') {
+                        // Stock Purchase column: only Cash method + Stock type
+                        const purchType = (p.type || 'Stock');
+                        if (method === 'Cash' && purchType === 'Stock') {
                             monthlyData[m].purchase += (p.totalBill || 0);
                         }
                         
@@ -9473,12 +9597,39 @@ var views = window.views = {
                         const m = r.date.substring(0, 7);
                         initMonth(m);
                         monthlyData[m].reloadBill += (r.total || 0);
+                        monthlyData[m].reloadCom += (r.commission || 0);
                     });
+
+                    const yearSettledSales = await db.sales.where('settledDate').startsWith(currentYearKey).filter(s => s.paymentStatus === 'Paid').toArray();
+                    const settledByMonthBill = {};
+                    
+                    yearSettledSales.forEach(s => {
+                        const m = (s.settledDate || '').substring(0, 7);
+                        if (!m.startsWith(currentYearKey)) return;
+                        const bNo = s.billNo || 'UNKNOWN';
+                        
+                        if (!settledByMonthBill[m]) settledByMonthBill[m] = {};
+                        if (!settledByMonthBill[m][bNo]) {
+                            settledByMonthBill[m][bNo] = { total: 0, paid: (s.paidAmount || 0) };
+                        }
+                        settledByMonthBill[m][bNo].total += (s.total || 0);
+                    });
+
+                    for (const m in settledByMonthBill) {
+                        initMonth(m);
+                        for (const bNo in settledByMonthBill[m]) {
+                            const due = settledByMonthBill[m][bNo].total - settledByMonthBill[m][bNo].paid;
+                            if (due > 0) {
+                                monthlyData[m].outstandingPaid += due;
+                            }
+                        }
+                    }
 
                     const validMonthKeys = [...new Set(Object.keys(monthlyData).filter(k => k.startsWith(currentYearKey) && /^\d{4}-\d{2}$/.test(k)))].sort().reverse();
 
                     let tRev = 0, tGP = 0, tExp = 0, tNP = 0;
-                    let tPurch = 0, tSup = 0, tReload = 0;
+                    let tPurch = 0, tSup = 0, tReload = 0, tReloadCom = 0;
+                    let tOut = 0, tOutPaid = 0;
 
                     const perfRows = validMonthKeys.map(m => {
                         const d = monthlyData[m];
@@ -9491,26 +9642,28 @@ var views = window.views = {
                         tPurch += (d.purchase || 0);
                         tSup += (d.supSettlement || 0);
                         tReload += (d.reloadBill || 0);
+                        tReloadCom += (d.reloadCom || 0);
+                        tOut += (d.outstanding || 0);
+                        tOutPaid += (d.outstandingPaid || 0);
 
                         const gMargin = d.revenue > 0 ? (d.grossProfit / d.revenue) * 100 : 0;
-                        const nMargin = d.revenue > 0 ? (net / d.revenue) * 100 : 0;
                         const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
                         const deadStockCount = allInventory.filter(item => !d.soldItemIds.has(item.itemId) && item.currentStock > 0).length;
 
                         return `
                             <tr class="hover:bg-gray-50 transition-colors">
-                                <td class="px-3 py-1.5 font-bold text-gray-700 whitespace-nowrap w-28">${mName}</td>
+                                <td class="px-3 py-1.5 font-bold text-gray-700 whitespace-nowrap">${mName}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.revenue)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${utils.formatNumber(d.grossProfit)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-emerald-600">${gMargin.toFixed(1)}%</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-orange-600">${utils.formatNumber(d.expenses)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono font-bold ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${utils.formatNumber(net)}</td>
-                                <td class="px-3 py-1.5 text-right font-mono ${net >= 0 ? 'text-blue-600' : 'text-red-600'}">${nMargin.toFixed(1)}%</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-indigo-600">${d.soldItemIds.size}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-red-600">${deadStockCount}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-gray-800">${utils.formatNumber(d.purchase)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-gray-600">${utils.formatNumber(d.supSettlement)}</td>
-                                <td class="px-3 py-1.5 text-right font-mono text-purple-700">${utils.formatNumber(d.reloadBill)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-orange-600">${utils.formatNumber(d.outstanding || 0)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-purple-700">${utils.formatNumber(d.reloadCom)}</td>
                             </tr>
                         `;
                     }).join('');
@@ -9523,43 +9676,72 @@ var views = window.views = {
                             <td class="px-3 py-2 text-right"></td>
                             <td class="px-3 py-2 text-right font-mono text-orange-700">${utils.formatNumber(tExp)}</td>
                             <td class="px-3 py-2 text-right font-mono font-bold ${tNP >= 0 ? 'text-blue-700' : 'text-red-700'}">${utils.formatNumber(tNP)}</td>
-                            <td class="px-3 py-2" colspan="3"></td>
+                            <td class="px-3 py-2" colspan="2"></td>
                             <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tPurch)}</td>
                             <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tSup)}</td>
-                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tReload)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-orange-700">${utils.formatNumber(tOut)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tReloadCom)}</td>
                         </tr>
                     ` : '';
 
-                    let tPCash = 0, tPCredit = 0, tPBank = 0, tPDF = 0, tPTotal = 0;
+                    let tPCash = 0, tPBank = 0, tPDF = 0;
                     const purchRows = validMonthKeys.map(m => {
                         const d = monthlyData[m];
                         const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
                         tPCash += d.purchaseByMethod.Cash;
-                        tPCredit += d.purchaseByMethod.Credit;
                         tPBank += d.purchaseByMethod.Bank;
                         tPDF += d.purchaseByMethod.DF;
-                        tPTotal += d.purchase;
+                        const rowTotal = d.purchaseByMethod.Cash + d.purchaseByMethod.Bank + d.purchaseByMethod.DF;
                         
                         return `
                             <tr class="hover:bg-gray-50 transition-colors">
                                 <td class="px-3 py-1.5 font-bold text-gray-700 text-center">${mName}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Cash)}</td>
-                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Credit)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Bank)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.DF)}</td>
-                                <td class="px-3 py-1.5 text-right font-mono font-bold text-gray-800">${utils.formatNumber(d.purchase)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono font-bold text-blue-700">${utils.formatNumber(rowTotal)}</td>
                             </tr>
                         `;
                     }).join('');
 
+                    const totalAll = tPCash + tPBank + tPDF;
                     const purchTRow = validMonthKeys.length > 0 ? `
                         <tr class="bg-gray-100 font-bold border-t-2 border-gray-200">
                             <td class="px-3 py-2 text-gray-800 text-center uppercase tracking-wider">Total</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPCash)}</td>
-                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPCredit)}</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPBank)}</td>
                             <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tPDF)}</td>
-                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tPTotal)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-blue-800">${utils.formatNumber(totalAll)}</td>
+                        </tr>
+                    ` : '';
+
+                    let tCCheque = 0, tCCredit = 0, tCSettle = 0;
+                    const chequeCreditRows = validMonthKeys.map(m => {
+                        const d = monthlyData[m];
+                        const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
+                        tCCheque += d.purchaseByMethod.Cheque;
+                        tCCredit += d.purchaseByMethod.Credit;
+                        tCSettle += d.supSettlement || 0;
+                        const rowTotal = d.purchaseByMethod.Cheque + d.purchaseByMethod.Credit;
+                        
+                        return `
+                            <tr class="hover:bg-gray-50 transition-colors">
+                                <td class="px-3 py-1.5 font-bold text-gray-700 text-center">${mName}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Cheque)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono">${utils.formatNumber(d.purchaseByMethod.Credit)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono font-bold text-indigo-700">${utils.formatNumber(rowTotal)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-teal-700">${utils.formatNumber(d.supSettlement || 0)}</td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                    const chequeCreditTRow = validMonthKeys.length > 0 ? `
+                        <tr class="bg-gray-100 font-bold border-t-2 border-gray-200">
+                            <td class="px-3 py-2 text-gray-800 text-center uppercase tracking-wider">Total</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tCCheque)}</td>
+                            <td class="px-3 py-2 text-right font-mono">${utils.formatNumber(tCCredit)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-indigo-800">${utils.formatNumber(tCCheque + tCCredit)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-teal-800">${utils.formatNumber(tCSettle)}</td>
                         </tr>
                     ` : '';
 
@@ -9593,28 +9775,34 @@ var views = window.views = {
                         </tr>
                     ` : '';
 
+                    // Store globally for PDF export
+                    window.lastPerfMonthlyData = monthlyData;
+                    window.lastPerfValidMonthKeys = validMonthKeys;
+                    window.lastPerfAllInventory = allInventory;
+
                     // Performance Year table only
                     perfContainer.innerHTML = `
                         <div class="overflow-x-auto w-full">
-                        <table id="monthly-performance-table" class="text-sm text-left whitespace-nowrap border-collapse" style="min-width:900px">
+                        <table id="monthly-performance-table" class="text-sm text-left whitespace-nowrap border-collapse" style="min-width:1000px">
                             <thead class="text-[10px] text-gray-400 uppercase bg-gray-50">
                                 <tr>
-                                    <th class="px-3 py-3 text-left w-28">Month</th>
+                                    <th class="px-3 py-3 text-left">Month</th>
                                     <th class="px-3 py-3 text-right">Rev</th>
-                                    <th class="px-3 py-3 text-right text-emerald-600">GP</th>
+                                    <th class="px-3 py-3 text-right text-emerald-600">Gross Profit</th>
                                     <th class="px-3 py-3 text-right text-emerald-600">GM%</th>
                                     <th class="px-3 py-3 text-right text-orange-600">Exp</th>
                                     <th class="px-3 py-3 text-right text-blue-600">NP</th>
-                                    <th class="px-3 py-3 text-right text-blue-600">NM%</th>
                                     <th class="px-3 py-3 text-right text-indigo-600">FM Items</th>
-                                    <th class="px-3 py-3 text-right text-red-600">Dead Stocks</th>
-                                    <th class="px-3 py-3 text-right text-gray-800">Purchase</th>
-                                    <th class="px-3 py-3 text-right text-gray-600">Credit Settlement</th>
-                                    <th class="px-3 py-3 text-right text-purple-700">Reload / Bill</th>
+                                    <th class="px-3 py-3 text-right text-red-600">Dead St</th>
+                                    <th class="px-3 py-3 text-right text-gray-800">C/B Purchase</th>
+                                    <th class="px-3 py-3 text-right text-gray-600">Credit Settle</th>
+                                    <th class="px-3 py-3 text-right text-orange-600">Outstanding</th>
+                                    <th class="px-3 py-3 text-right text-purple-700">Re/Bill Com</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
                                 ${perfRows}
+                                ${perfTRow}
                             </tbody>
                         </table>
                         </div>
@@ -9629,7 +9817,6 @@ var views = window.views = {
                                     <tr>
                                         <th class="px-3 py-2 text-center w-24">Month</th>
                                         <th class="px-3 py-2 text-right">Cash</th>
-                                        <th class="px-3 py-2 text-right">Credit</th>
                                         <th class="px-3 py-2 text-right">Bank</th>
                                         <th class="px-3 py-2 text-right">DF</th>
                                         <th class="px-3 py-2 text-right text-blue-700 font-bold">Total</th>
@@ -9637,6 +9824,28 @@ var views = window.views = {
                                 </thead>
                                 <tbody class="divide-y divide-gray-100">
                                     ${purchRows}
+                                    ${purchTRow}
+                                </tbody>
+                            </table>
+                        `;
+                    }
+
+                    const purchChequeContainer = document.getElementById('report-purchase-cheque-container');
+                    if (purchChequeContainer) {
+                        purchChequeContainer.innerHTML = `
+                            <table id="monthly-purchase-cheque-report-table" class="w-full text-sm text-left whitespace-nowrap">
+                                <thead class="text-[10px] text-gray-400 uppercase bg-gray-50 sticky top-0">
+                                    <tr>
+                                        <th class="px-3 py-2 text-center w-24">Month</th>
+                                        <th class="px-3 py-2 text-right">Cheque</th>
+                                        <th class="px-3 py-2 text-right">Credit</th>
+                                        <th class="px-3 py-2 text-right text-indigo-700 font-bold">Total</th>
+                                        <th class="px-3 py-2 text-right text-teal-700 font-bold">Credit Settle</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    ${chequeCreditRows}
+                                    ${chequeCreditTRow}
                                 </tbody>
                             </table>
                         `;
