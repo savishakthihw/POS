@@ -1009,7 +1009,7 @@ window.app = {
             
             // Fetch all required data for the month
             const monthSales = await db.sales.where('date').between(currentMonth, currentMonth + '\uffff').filter(s => s.paymentStatus !== 'Cancelled').toArray();
-            const settledSales = await db.sales.where('settledDate').between(currentMonth, currentMonth + '\uffff').filter(s => s.paymentStatus === 'Paid').toArray();
+            const settledSales = await db.sales.where('settledDate').between(currentMonth, currentMonth + '\uffff').toArray();
             
             const monthCreditSettlements = await db.credit_settlements.where('dateSettled').between(currentMonth, currentMonth + '\uffff').toArray();
             const monthExpenses = await db.expenses.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
@@ -1020,7 +1020,7 @@ window.app = {
             const initDate = (date) => {
                 if (!summaryMap[date]) summaryMap[date] = { 
                     sales: 0, profit: 0, fees: 0, margin: 0,
-                    outstanding: 0, creditBill: 0, expenses: 0, 
+                    outstanding: 0, outstandingPaid: 0, creditBill: 0, expenses: 0, 
                     purchase: 0, supSettlement: 0, reloadBill: 0,
                     cash: 0, card: 0, bank: 0, qr: 0
                 };
@@ -1031,7 +1031,6 @@ window.app = {
             // Process Sales (Sales, Profit, Fees, Outstanding)
             monthSales.forEach(s => {
                 initDate(s.date);
-                summaryMap[s.date].sales += (s.total || 0);
                 summaryMap[s.date].profit += (s.profit || 0);
                 summaryMap[s.date].fees += (s.bankFee || 0);
 
@@ -1045,7 +1044,9 @@ window.app = {
                         card: s.cardAmount || 0,
                         bank: s.bankAmount || 0,
                         qr: s.qrAmount || 0,
-                        method: s.method || 'Cash'
+                        method: s.method || 'Cash',
+                        hasBreakdown: 'cashAmount' in s,
+                        settledDate: s.settledDate
                     };
                 }
                 billGroups[bNo].total += (s.total || 0);
@@ -1053,9 +1054,13 @@ window.app = {
 
             // Calculate Payment Breakdown (Cash, Card, Bank, QR) and Outstanding
             Object.values(billGroups).forEach(b => {
-                const billOutstanding = Math.max(0, b.total - b.paid);
+                const initialPaid = (b.cash || 0) + (b.card || 0) + (b.bank || 0) + (b.qr || 0);
+                const isSettledLate = b.settledDate && b.date && b.settledDate.split('T')[0] !== b.date.split('T')[0];
+                const safeInitialPaid = (!b.hasBreakdown && !isSettledLate) ? b.paid : initialPaid;
+                const billOutstanding = Math.max(0, b.total - safeInitialPaid);
                 const settledAmount = b.total - billOutstanding;
 
+                summaryMap[b.date].sales += settledAmount;
                 summaryMap[b.date].outstanding += billOutstanding;
 
                 if (b.method === 'Mixed') {
@@ -1086,7 +1091,10 @@ window.app = {
                 
                 if (!settledByDateBillSummary[dateKey]) settledByDateBillSummary[dateKey] = {};
                 if (!settledByDateBillSummary[dateKey][bNo]) {
-                    settledByDateBillSummary[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), settleMethod: s.settleMethod || 'Cash' };
+                    const initialPaid = (s.cashAmount || 0) + (s.cardAmount || 0) + (s.bankAmount || 0) + (s.qrAmount || 0);
+                    const isSettledLate = s.settledDate && s.date && s.settledDate.split('T')[0] !== s.date.split('T')[0];
+                    const safeInitialPaid = (!('cashAmount' in s) && !isSettledLate) ? s.paidAmount : initialPaid;
+                    settledByDateBillSummary[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), initialPaid: safeInitialPaid, settleMethod: s.settleMethod || 'Cash' };
                 }
                 settledByDateBillSummary[dateKey][bNo].total += (s.total || 0);
             });
@@ -1095,16 +1103,18 @@ window.app = {
                 initDate(dateKey);
                 for (const bNo in settledByDateBillSummary[dateKey]) {
                     const b = settledByDateBillSummary[dateKey][bNo];
-                    const due = b.total - b.paid;
-                    if (due > 0) {
+                    const finalPaid = Math.max(b.paid, b.total);
+                    const lateSettledAmount = finalPaid - b.initialPaid;
+                    if (lateSettledAmount > 0) {
+                        summaryMap[dateKey].outstandingPaid += lateSettledAmount;
                         if (b.settleMethod === 'Visa/Master' || b.settleMethod === 'Card') {
-                            summaryMap[dateKey].card += due;
+                            summaryMap[dateKey].card += lateSettledAmount;
                         } else if (b.settleMethod === 'Bank') {
-                            summaryMap[dateKey].bank += due;
+                            summaryMap[dateKey].bank += lateSettledAmount;
                         } else if (b.settleMethod === 'QR' || b.settleMethod === 'Cheque') {
-                            summaryMap[dateKey].qr += due;
+                            summaryMap[dateKey].qr += lateSettledAmount;
                         } else {
-                            summaryMap[dateKey].cash += due;
+                            summaryMap[dateKey].cash += lateSettledAmount;
                         }
                     }
                 }
@@ -1140,7 +1150,7 @@ window.app = {
             const summaryTable = document.getElementById('report-daily-summary-body');
             const summaryTableFoot = document.getElementById('report-daily-summary-foot');
             
-            let gSales = 0, gProfit = 0, gFees = 0, gOut = 0, gCredit = 0;
+            let gSales = 0, gProfit = 0, gFees = 0, gOut = 0, gOutPaid = 0, gCredit = 0;
             let gExp = 0, gPurch = 0, gSup = 0, gReload = 0;
             
             const paymentTableBody = document.getElementById('report-daily-payment-body');
@@ -1153,12 +1163,12 @@ window.app = {
                     const sales = row.sales;
                     const profit = row.profit;
                     const fees = row.fees;
-                    const margin = sales > 0 ? (profit / sales) * 100 : 0;
                     
                     gSales += sales;
                     gProfit += profit;
                     gFees += fees;
                     gOut += row.outstanding;
+                    gOutPaid += row.outstandingPaid;
                     gCredit += row.creditBill;
                     gExp += row.expenses;
                     gPurch += row.purchase;
@@ -1170,9 +1180,9 @@ window.app = {
                             <td class="px-2 py-1.5 font-bold text-gray-700 font-mono text-xs">${date.split('-')[2]}/${date.split('-')[1]}</td>
                             <td class="px-2 py-1.5 font-bold text-indigo-700 text-right text-xs">${utils.formatCurrency(sales)}</td>
                             <td class="px-2 py-1.5 font-mono text-gray-600 text-right text-xs">${utils.formatCurrency(row.outstanding)}</td>
+                            <td class="px-2 py-1.5 font-mono text-blue-600 text-right text-xs">${utils.formatCurrency(row.outstandingPaid)}</td>
                             <td class="px-2 py-1.5 font-bold text-emerald-600 text-right text-xs">${utils.formatCurrency(profit)}</td>
                             <td class="px-2 py-1.5 font-bold text-rose-600 text-right text-xs">${fees > 0 ? '-' + utils.formatCurrency(fees) : '-'}</td>
-                            <td class="px-2 py-1.5 font-bold text-purple-600 text-right text-xs">${margin.toFixed(1)}%</td>
                             <td class="px-2 py-1.5 font-mono text-red-500 text-right text-xs">${utils.formatCurrency(row.expenses)}</td>
                             <td class="px-2 py-1.5 font-mono text-blue-600 text-right text-xs">${utils.formatCurrency(row.purchase)}</td>
                             <td class="px-2 py-1.5 font-mono text-orange-500 text-right text-xs">${utils.formatCurrency(row.supSettlement)}</td>
@@ -1223,15 +1233,14 @@ window.app = {
             }
 
             if (summaryTableFoot && sortedDays.length > 0) {
-                const gMargin = gSales > 0 ? (gProfit / gSales) * 100 : 0;
                 summaryTableFoot.innerHTML = `
                     <tr>
                         <td class="px-2 py-3 text-right uppercase tracking-wider text-gray-800 bg-gray-100 border-t-2 border-gray-300 font-bold text-xs">Total</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-indigo-800 text-xs">${utils.formatCurrency(gSales)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-gray-800 text-xs">${utils.formatCurrency(gOut)}</td>
+                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-blue-800 text-xs">${utils.formatCurrency(gOutPaid)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-emerald-700 text-xs">${utils.formatCurrency(gProfit)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-rose-700 text-xs">${gFees > 0 ? '-' + utils.formatCurrency(gFees) : '-'}</td>
-                        <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-purple-700 text-xs">${gMargin.toFixed(1)}%</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-red-600 text-xs">${utils.formatCurrency(gExp)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-blue-700 text-xs">${utils.formatCurrency(gPurch)}</td>
                         <td class="px-2 py-3 text-right border-t-2 border-gray-300 font-bold text-orange-600 text-xs">${utils.formatCurrency(gSup)}</td>
@@ -1257,7 +1266,7 @@ window.app = {
             
             // Fetch all required data for the month
             const monthSales = await db.sales.where('date').between(currentMonth, currentMonth + '\uffff').filter(s => s.paymentStatus !== 'Cancelled').toArray();
-            const settledSales = await db.sales.where('settledDate').between(currentMonth, currentMonth + '\uffff').filter(s => s.paymentStatus === 'Paid').toArray();
+            const settledSales = await db.sales.where('settledDate').between(currentMonth, currentMonth + '\uffff').toArray();
             const monthCreditSettlements = await db.credit_settlements.where('dateSettled').between(currentMonth, currentMonth + '\uffff').toArray();
             const monthExpenses = await db.expenses.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
             const monthPurchases = await db.purchases.where('date').between(currentMonth, currentMonth + '\uffff').toArray();
@@ -1281,7 +1290,12 @@ window.app = {
                         total: 0,
                         paid: s.paidAmount || 0,
                         cash: s.cashAmount || 0,
-                        method: s.method || 'Cash'
+                        card: s.cardAmount || 0,
+                        bank: s.bankAmount || 0,
+                        qr: s.qrAmount || 0,
+                        method: s.method || 'Cash',
+                        hasBreakdown: 'cashAmount' in s,
+                        settledDate: s.settledDate
                     };
                 }
                 billGroups[bNo].total += (s.total || 0);
@@ -1289,7 +1303,10 @@ window.app = {
 
             Object.values(billGroups).forEach(b => {
                 initDate(b.date);
-                const billOutstanding = Math.max(0, b.total - b.paid);
+                const initialPaid = (b.cash || 0) + (b.card || 0) + (b.bank || 0) + (b.qr || 0);
+                const isSettledLate = b.settledDate && b.date && b.settledDate.split('T')[0] !== b.date.split('T')[0];
+                const safeInitialPaid = (!b.hasBreakdown && !isSettledLate) ? b.paid : initialPaid;
+                const billOutstanding = Math.max(0, b.total - safeInitialPaid);
                 const settledAmount = b.total - billOutstanding;
 
                 if (b.method === 'Mixed') {
@@ -1311,7 +1328,10 @@ window.app = {
                 
                 if (!settledByDateBill[dateKey]) settledByDateBill[dateKey] = {};
                 if (!settledByDateBill[dateKey][bNo]) {
-                    settledByDateBill[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), settleMethod: s.settleMethod || 'Cash' };
+                    const initialPaid = (s.cashAmount || 0) + (s.cardAmount || 0) + (s.bankAmount || 0) + (s.qrAmount || 0);
+                    const isSettledLate = s.settledDate && s.date && s.settledDate.split('T')[0] !== s.date.split('T')[0];
+                    const safeInitialPaid = (!('cashAmount' in s) && !isSettledLate) ? s.paidAmount : initialPaid;
+                    settledByDateBill[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), initialPaid: safeInitialPaid, settleMethod: s.settleMethod || 'Cash' };
                 }
                 settledByDateBill[dateKey][bNo].total += (s.total || 0);
             });
@@ -1320,10 +1340,11 @@ window.app = {
                 initDate(dateKey);
                 for (const bNo in settledByDateBill[dateKey]) {
                     const b = settledByDateBill[dateKey][bNo];
-                    const due = b.total - b.paid;
-                    if (due > 0) {
+                    const finalPaid = Math.max(b.paid, b.total);
+                    const lateSettledAmount = finalPaid - b.initialPaid;
+                    if (lateSettledAmount > 0) {
                         if (b.settleMethod === 'Cash' || !b.settleMethod) {
-                            cashMap[dateKey].outstandingPaid += due;
+                            cashMap[dateKey].outstandingPaid += lateSettledAmount;
                         }
                     }
                 }
