@@ -102,7 +102,7 @@ var views = window.views = {
         }
         
         let tRev = 0, tGP = 0, tExp = 0, tNP = 0;
-        let tPurch = 0, tSup = 0, tReload = 0, tReloadCom = 0;
+        let tPurch = 0, tChequePurch = 0, tSup = 0, tReload = 0, tReloadCom = 0;
         let tOut = 0, tOutPaid = 0;
 
         const rows = keys.map(m => {
@@ -114,6 +114,7 @@ var views = window.views = {
             tExp += (d.expenses || 0);
             tNP += net;
             tPurch += (d.purchase || 0);
+            tChequePurch += (d.purchaseByMethod.Cheque || 0);
             tSup += (d.supSettlement || 0);
             tReload += (d.reloadBill || 0);
             tReloadCom += (d.reloadCom || 0);
@@ -135,8 +136,10 @@ var views = window.views = {
                     <td>${d.soldItemIds.size}</td>
                     <td>${deadStockCount}</td>
                     <td>${utils.formatNumber(d.purchase)}</td>
+                    <td>${utils.formatNumber(d.purchaseByMethod.Cheque || 0)}</td>
                     <td>${utils.formatNumber(d.supSettlement)}</td>
                     <td>${utils.formatNumber(d.outstanding || 0)}</td>
+                    <td>${utils.formatNumber(d.outstandingPaid || 0)}</td>
                     <td>${utils.formatNumber(d.reloadCom)}</td>
                 </tr>
             `;
@@ -152,8 +155,10 @@ var views = window.views = {
                 <td>${utils.formatNumber(tNP)}</td>
                 <td colspan="2"></td>
                 <td>${utils.formatNumber(tPurch)}</td>
+                <td>${utils.formatNumber(tChequePurch)}</td>
                 <td>${utils.formatNumber(tSup)}</td>
                 <td>${utils.formatNumber(tOut)}</td>
+                <td>${utils.formatNumber(tOutPaid)}</td>
                 <td>${utils.formatNumber(tReloadCom)}</td>
             </tr>
         ` : '';
@@ -169,13 +174,15 @@ var views = window.views = {
                         <th>Rev</th>
                         <th>Gross Profit</th>
                         <th>GM%</th>
-                        <th>Exp</th>
-                        <th>NP</th>
+                        <th>Expenses</th>
+                        <th>Net Profit</th>
                         <th>FM Items</th>
                         <th>Dead St</th>
                         <th>C/B Purchase</th>
+                        <th>Cheque Purchase</th>
                         <th>Credit Settle</th>
                         <th>Outstanding</th>
+                        <th>Outsta. paid</th>
                         <th>Re/Bill Com</th>
                     </tr>
                 </thead>
@@ -5533,7 +5540,7 @@ var views = window.views = {
         if (!tbody) return;
 
         const monthFilter = (document.getElementById('outstanding-details-month-filter')?.value || '').trim();
-        const allData = window._pendingSalesRaw || [];
+        const allData = [...(window._pendingSalesRaw || []), ...(window._outstandingSettledSalesRaw || [])];
 
         // Filter by bill date month if a month is selected
         const filtered = monthFilter
@@ -5541,31 +5548,44 @@ var views = window.views = {
             : allData;
 
         if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-gray-400 italic">${monthFilter ? 'No outstanding bills for this month.' : 'No outstanding bills!'}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-400 italic">${monthFilter ? 'No outstanding bills for this month.' : 'No outstanding bills!'}</td></tr>`;
             return;
         }
 
         const bills = {};
         filtered.forEach(s => {
             const bNo = s.billNo || 'UNKNOWN';
-            if (!bills[bNo]) bills[bNo] = { date: s.date, billNo: bNo, customer: s.customer || 'Unknown', method: s.method, total: 0, paid: (s.paidAmount || 0) };
+            if (!bills[bNo]) {
+                const initialPaid = (s.cashAmount || 0) + (s.cardAmount || 0) + (s.bankAmount || 0) + (s.qrAmount || 0);
+                const isSettledLate = s.settledDate && s.date && s.settledDate.split('T')[0] !== s.date.split('T')[0];
+                const safeInitialPaid = (!('cashAmount' in s) && !isSettledLate) ? s.paidAmount : initialPaid;
+                bills[bNo] = { date: s.date, billNo: bNo, customer: s.customer || 'Unknown', method: s.method, total: 0, paid: (s.paidAmount || 0), initialPaid: safeInitialPaid, paymentStatus: s.paymentStatus };
+            }
             bills[bNo].total += (s.total || 0);
         });
 
         let totalDue = 0;
+        let totalAmount = 0;
         const rowsHTML = Object.values(bills)
             .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
             .map(b => {
-                const due = b.total - b.paid;
-                if (due <= 0) return '';
-                totalDue += due;
+                const finalPaid = b.paymentStatus === 'Paid' ? Math.max(b.paid, b.total) : b.paid;
+                const due = b.total - finalPaid;
+                const displayDue = due <= 0 ? 0 : due;
+                
+                const amount = b.total - b.initialPaid;
+                const displayAmount = amount <= 0 ? 0 : amount;
+                
+                totalDue += displayDue;
+                totalAmount += displayAmount;
                 return `
                     <tr class="hover:bg-orange-50 transition-colors">
                         <td class="px-2 py-1.5 font-mono text-gray-500 text-[11px]">${new Date(b.date).toLocaleDateString()}</td>
                         <td class="px-2 py-1.5 font-bold text-gray-800 text-[11px]">${b.billNo}</td>
                         <td class="px-2 py-1.5 font-bold text-gray-700 text-[11px]">${b.customer}</td>
                         <td class="px-2 py-1.5 text-[11px]"><span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-orange-100 text-orange-600">${b.method}</span></td>
-                        <td class="px-2 py-1.5 text-right font-bold text-red-600 font-mono text-[11px]">${utils.formatNumber(due)}</td>
+                        <td class="px-2 py-1.5 text-right font-bold text-gray-800 font-mono text-[11px]">${utils.formatNumber(displayAmount)}</td>
+                        <td class="px-2 py-1.5 text-right font-bold text-red-600 font-mono text-[11px]">${utils.formatNumber(displayDue)}</td>
                     </tr>
                 `;
             }).join('');
@@ -5573,6 +5593,7 @@ var views = window.views = {
         tbody.innerHTML = rowsHTML + `
             <tr class="bg-gray-50 border-t-2 border-gray-200 sticky bottom-0">
                 <td colspan="4" class="px-2 py-2 text-right font-bold uppercase text-gray-800 text-[10px] tracking-wider">Total Outstanding</td>
+                <td class="px-2 py-2 text-right font-black text-gray-900 font-mono text-xs">${utils.formatNumber(totalAmount)}</td>
                 <td class="px-2 py-2 text-right font-black text-red-700 font-mono text-xs">${utils.formatNumber(totalDue)}</td>
             </tr>
         `;
@@ -8997,7 +9018,14 @@ var views = window.views = {
             db.purchases.toArray(),
             db.sales.where('paymentStatus').equals('Pending').toArray(),
             db.sales.where('date').startsWith(currentYearKey).toArray(),
-            db.sales.where('paymentStatus').equals('Paid').filter(s => s.settledDate && s.date && s.settledDate.split('T')[0] !== s.date.split('T')[0]).toArray()
+            db.sales.where('paymentStatus').equals('Paid').filter(s => {
+                if (!s.date || !s.settledDate) return false;
+                const isSettledLate = s.settledDate.split('T')[0] !== s.date.split('T')[0];
+                if (!isSettledLate) return false; // Ignore same-day settlements
+                const initialPaid = (s.cashAmount || 0) + (s.cardAmount || 0) + (s.bankAmount || 0) + (s.qrAmount || 0);
+                const safeInitialPaid = (!('cashAmount' in s)) ? (s.paidAmount || 0) : initialPaid;
+                return (s.total || 0) > safeInitialPaid;
+            }).toArray()
         ]);
 
         window._outstandingSettledSalesRaw = outstandingSettledSalesRaw;
@@ -9159,12 +9187,12 @@ var views = window.views = {
                 <!-- 2.6. Outstanding Details Table -->
                 <div class="col-span-10 lg:col-span-10 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col mb-6">
                     <h4 class="font-bold text-lg mb-4 text-gray-800 flex justify-between items-center">
-                        <span class="flex items-center gap-2 text-sm uppercase tracking-wide"><i class="fa-solid fa-hourglass-half text-orange-500"></i> Outstanding Details</span>
+                        <span class="flex items-center gap-2 text-sm uppercase tracking-wide"><i class="fa-solid fa-hourglass-half text-orange-500"></i> Outstanding Details History</span>
                         <div class="flex items-center gap-2 no-print">
                             <input type="month" id="outstanding-details-month-filter"
                                 class="text-[10px] font-bold px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-500 bg-gray-50 hover:bg-white transition-colors cursor-pointer"
                                 onchange="views.renderOutstandingDetailsBody()">
-                            <button onclick="views.exportToPDF('outstanding-details-table', 'Outstanding Details')" class="text-[10px] bg-orange-50 text-orange-600 px-3 py-1 rounded-lg hover:bg-orange-100 transition-all flex items-center gap-1">
+                            <button onclick="views.exportToPDF('outstanding-details-table', 'Outstanding Details History')" class="text-[10px] bg-orange-50 text-orange-600 px-3 py-1 rounded-lg hover:bg-orange-100 transition-all flex items-center gap-1">
                                 <i class="fa-solid fa-file-pdf"></i> PDF
                             </button>
                         </div>
@@ -9177,11 +9205,12 @@ var views = window.views = {
                                     <th class="px-2 py-2">Bill No</th>
                                     <th class="px-2 py-2">Customer</th>
                                     <th class="px-2 py-2">Method</th>
+                                    <th class="px-2 py-2 text-right">Amount</th>
                                     <th class="px-2 py-2 text-right">Amount Due</th>
                                 </tr>
                             </thead>
                             <tbody id="outstanding-details-body" class="divide-y divide-gray-50">
-                                <tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">Loading...</td></tr>
+                                <tr><td colspan="6" class="px-4 py-8 text-center text-gray-400">Loading...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -9690,6 +9719,16 @@ var views = window.views = {
             `;
 
         if (app.isAdmin) {
+            const currentMonthVal = new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+            const settledF = document.getElementById('outstanding-settled-month-filter');
+            if (settledF) settledF.value = currentMonthVal;
+            const detailsF = document.getElementById('outstanding-details-month-filter');
+            if (detailsF) detailsF.value = currentMonthVal;
+            const summaryF = document.getElementById('report-summary-month-filter');
+            if (summaryF) summaryF.value = currentMonthVal;
+            const paymentF = document.getElementById('report-payment-month-filter');
+            if (paymentF) paymentF.value = currentMonthVal;
+
             app.updateReportSummaryTable(); // Load the small table separately
             app.updateCashInOutSummaryTable(); // Load Cash In/Out summary separately
             app.initReportCharts(); // Load charts separately
@@ -9733,7 +9772,7 @@ var views = window.views = {
                         const bNo = s.billNo || 'UNKNOWN';
                         if (!pendingBillsByMonth[bNo]) {
                             const initialPaid = (s.cashAmount || 0) + (s.cardAmount || 0) + (s.bankAmount || 0) + (s.qrAmount || 0);
-                            const isSettledLate = s.settledDate && s.settledDate.split('T')[0] !== s.date.split('T')[0];
+                            const isSettledLate = s.settledDate && s.date && s.settledDate.split('T')[0] !== s.date.split('T')[0];
                             const safeInitialPaid = (!('cashAmount' in s) && !isSettledLate) ? s.paidAmount : initialPaid;
                             pendingBillsByMonth[bNo] = { month: m, total: 0, initialPaid: safeInitialPaid };
                         }
@@ -9758,9 +9797,9 @@ var views = window.views = {
                         let method = p.method || 'Cash';
                         if (method === 'Visa/Master') method = 'Bank';
                         
-                        // Stock Purchase column: only Cash method + Stock type
+                        // Stock Purchase column: Cash/Bank method + Stock type
                         const purchType = (p.type || 'Stock');
-                        if (method === 'Cash' && purchType === 'Stock') {
+                        if ((method === 'Cash' || method === 'Bank') && purchType === 'Stock') {
                             monthlyData[m].purchase += (p.totalBill || 0);
                         }
                         
@@ -9802,9 +9841,9 @@ var views = window.views = {
                         if (!settledByMonthBill[m]) settledByMonthBill[m] = {};
                         if (!settledByMonthBill[m][bNo]) {
                             const initialPaid = (s.cashAmount || 0) + (s.cardAmount || 0) + (s.bankAmount || 0) + (s.qrAmount || 0);
-                            const isSettledLate = s.settledDate && s.settledDate.split('T')[0] !== s.date.split('T')[0];
+                            const isSettledLate = s.settledDate && s.date && s.settledDate.split('T')[0] !== s.date.split('T')[0];
                             const safeInitialPaid = (!('cashAmount' in s) && !isSettledLate) ? s.paidAmount : initialPaid;
-                            settledByMonthBill[m][bNo] = { total: 0, paid: (s.paidAmount || 0), initialPaid: safeInitialPaid };
+                            settledByMonthBill[m][bNo] = { total: 0, paid: (s.paidAmount || 0), initialPaid: safeInitialPaid, isSettledLate: isSettledLate };
                         }
                         settledByMonthBill[m][bNo].total += (s.total || 0);
                     });
@@ -9813,7 +9852,9 @@ var views = window.views = {
                         initMonth(m);
                         for (const bNo in settledByMonthBill[m]) {
                             const b = settledByMonthBill[m][bNo];
-                            const lateSettledAmount = b.paid - b.initialPaid;
+                            if (!b.isSettledLate) continue; // Ignore same-day settlements
+                            const finalPaid = Math.max(b.paid, b.total);
+                            const lateSettledAmount = finalPaid - b.initialPaid;
                             if (lateSettledAmount > 0) {
                                 monthlyData[m].outstandingPaid += lateSettledAmount;
                             }
@@ -9823,7 +9864,7 @@ var views = window.views = {
                     const validMonthKeys = [...new Set(Object.keys(monthlyData).filter(k => k.startsWith(currentYearKey) && /^\d{4}-\d{2}$/.test(k)))].sort().reverse();
 
                     let tRev = 0, tGP = 0, tExp = 0, tNP = 0;
-                    let tPurch = 0, tSup = 0, tReload = 0, tReloadCom = 0;
+                    let tPurch = 0, tChequePurch = 0, tSup = 0, tReload = 0, tReloadCom = 0;
                     let tOut = 0, tOutPaid = 0;
 
                     const perfRows = validMonthKeys.map(m => {
@@ -9835,6 +9876,7 @@ var views = window.views = {
                         tExp += (d.expenses || 0);
                         tNP += net;
                         tPurch += (d.purchase || 0);
+                        tChequePurch += (d.purchaseByMethod.Cheque || 0);
                         tSup += (d.supSettlement || 0);
                         tReload += (d.reloadBill || 0);
                         tReloadCom += (d.reloadCom || 0);
@@ -9843,7 +9885,7 @@ var views = window.views = {
 
                         const gMargin = d.revenue > 0 ? (d.grossProfit / d.revenue) * 100 : 0;
                         const mName = new Date(m + '-01').toLocaleString('en-US', { month: 'short', year: 'numeric' });
-                        const deadStockCount = allInventory.filter(item => !d.soldItemIds.has(item.itemId) && item.currentStock > 0).length;
+                        const deadStockCount = allInventory.filter(item => !d.soldItemIds.has(item.itemId)).length;
 
                         return `
                             <tr class="hover:bg-gray-50 transition-colors">
@@ -9856,8 +9898,10 @@ var views = window.views = {
                                 <td class="px-3 py-1.5 text-right font-mono text-indigo-600">${d.soldItemIds.size}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-red-600">${deadStockCount}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-gray-800">${utils.formatNumber(d.purchase)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-gray-800">${utils.formatNumber(d.purchaseByMethod.Cheque || 0)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-gray-600">${utils.formatNumber(d.supSettlement)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-orange-600">${utils.formatNumber(d.outstanding || 0)}</td>
+                                <td class="px-3 py-1.5 text-right font-mono text-orange-500">${utils.formatNumber(d.outstandingPaid || 0)}</td>
                                 <td class="px-3 py-1.5 text-right font-mono text-purple-700">${utils.formatNumber(d.reloadCom)}</td>
                             </tr>
                         `;
@@ -9873,8 +9917,10 @@ var views = window.views = {
                             <td class="px-3 py-2 text-right font-mono font-bold ${tNP >= 0 ? 'text-blue-700' : 'text-red-700'}">${utils.formatNumber(tNP)}</td>
                             <td class="px-3 py-2" colspan="2"></td>
                             <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tPurch)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tChequePurch)}</td>
                             <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tSup)}</td>
                             <td class="px-3 py-2 text-right font-mono text-orange-700">${utils.formatNumber(tOut)}</td>
+                            <td class="px-3 py-2 text-right font-mono text-orange-600">${utils.formatNumber(tOutPaid)}</td>
                             <td class="px-3 py-2 text-right font-mono text-gray-900">${utils.formatNumber(tReloadCom)}</td>
                         </tr>
                     ` : '';
@@ -9985,13 +10031,15 @@ var views = window.views = {
                                     <th class="px-3 py-3 text-right">Rev</th>
                                     <th class="px-3 py-3 text-right text-emerald-600">Gross Profit</th>
                                     <th class="px-3 py-3 text-right text-emerald-600">GM%</th>
-                                    <th class="px-3 py-3 text-right text-orange-600">Exp</th>
-                                    <th class="px-3 py-3 text-right text-blue-600">NP</th>
+                                    <th class="px-3 py-3 text-right text-orange-600">Expenses</th>
+                                    <th class="px-3 py-3 text-right text-blue-600">Net Profit</th>
                                     <th class="px-3 py-3 text-right text-indigo-600">FM Items</th>
                                     <th class="px-3 py-3 text-right text-red-600">Dead St</th>
                                     <th class="px-3 py-3 text-right text-gray-800">C/B Purchase</th>
+                                    <th class="px-3 py-3 text-right text-gray-800">Cheque Purchase</th>
                                     <th class="px-3 py-3 text-right text-gray-600">Credit Settle</th>
                                     <th class="px-3 py-3 text-right text-orange-600">Outstanding</th>
+                                    <th class="px-3 py-3 text-right text-orange-500">Outsta. paid</th>
                                     <th class="px-3 py-3 text-right text-purple-700">Re/Bill Com</th>
                                 </tr>
                             </thead>

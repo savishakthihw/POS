@@ -1094,7 +1094,7 @@ window.app = {
                     const initialPaid = (s.cashAmount || 0) + (s.cardAmount || 0) + (s.bankAmount || 0) + (s.qrAmount || 0);
                     const isSettledLate = s.settledDate && s.date && s.settledDate.split('T')[0] !== s.date.split('T')[0];
                     const safeInitialPaid = (!('cashAmount' in s) && !isSettledLate) ? s.paidAmount : initialPaid;
-                    settledByDateBillSummary[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), initialPaid: safeInitialPaid, settleMethod: s.settleMethod || 'Cash' };
+                    settledByDateBillSummary[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), initialPaid: safeInitialPaid, settleMethod: s.settleMethod || 'Cash', isSettledLate: isSettledLate };
                 }
                 settledByDateBillSummary[dateKey][bNo].total += (s.total || 0);
             });
@@ -1103,6 +1103,7 @@ window.app = {
                 initDate(dateKey);
                 for (const bNo in settledByDateBillSummary[dateKey]) {
                     const b = settledByDateBillSummary[dateKey][bNo];
+                    if (!b.isSettledLate) continue; // Ignore same-day settlements
                     const finalPaid = Math.max(b.paid, b.total);
                     const lateSettledAmount = finalPaid - b.initialPaid;
                     if (lateSettledAmount > 0) {
@@ -1331,7 +1332,7 @@ window.app = {
                     const initialPaid = (s.cashAmount || 0) + (s.cardAmount || 0) + (s.bankAmount || 0) + (s.qrAmount || 0);
                     const isSettledLate = s.settledDate && s.date && s.settledDate.split('T')[0] !== s.date.split('T')[0];
                     const safeInitialPaid = (!('cashAmount' in s) && !isSettledLate) ? s.paidAmount : initialPaid;
-                    settledByDateBill[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), initialPaid: safeInitialPaid, settleMethod: s.settleMethod || 'Cash' };
+                    settledByDateBill[dateKey][bNo] = { total: 0, paid: (s.paidAmount || 0), initialPaid: safeInitialPaid, settleMethod: s.settleMethod || 'Cash', isSettledLate: isSettledLate };
                 }
                 settledByDateBill[dateKey][bNo].total += (s.total || 0);
             });
@@ -1340,6 +1341,7 @@ window.app = {
                 initDate(dateKey);
                 for (const bNo in settledByDateBill[dateKey]) {
                     const b = settledByDateBill[dateKey][bNo];
+                    if (!b.isSettledLate) continue; // Ignore same-day settlements
                     const finalPaid = Math.max(b.paid, b.total);
                     const lateSettledAmount = finalPaid - b.initialPaid;
                     if (lateSettledAmount > 0) {
