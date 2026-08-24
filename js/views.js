@@ -7196,13 +7196,26 @@ var views = window.views = {
 
             <!-- 1.6 Cloud Connectivity (NEW) - Admin Only -->
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ${app.isAdmin ? '' : 'hidden'}">
-                <div class="p-6 border-b border-gray-50 flex items-center gap-4 bg-gradient-to-r from-blue-50 to-white">
-                    <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl shadow-sm">
-                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                <div class="p-6 border-b border-gray-50 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center text-xl shadow-sm">
+                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-800">Cloud Connectivity (Firebase)</h3>
+                            <p class="text-xs text-gray-500">Sync data between PC and Web POS</p>
+                        </div>
                     </div>
-                    <div>
-                        <h3 class="text-lg font-bold text-gray-800">Cloud Connectivity (Firebase)</h3>
-                        <p class="text-xs text-gray-500">Sync data between PC and Web POS</p>
+                    
+                    <div class="flex items-center gap-3">
+                        <div class="text-right">
+                            <h4 class="font-bold text-gray-800 text-sm">Auto Cloud Sync</h4>
+                            <p class="text-[10px] text-gray-500">Sync on system shutdown</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="setting-auto-cloud-sync" class="sr-only peer" ${app.autoCloudSync ? 'checked' : ''} onchange="views.updateAutoCloudSyncSetting(this.checked)">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
                     </div>
                 </div>
 
@@ -7824,6 +7837,12 @@ var views = window.views = {
         app.autoBackupInterval = interval;
         await db.settings.put({ key: 'autoBackupInterval', value: String(interval) });
         utils.showNotification('Backup interval saved successfully', 'success');
+    },
+
+    updateAutoCloudSyncSetting: async (isChecked) => {
+        app.autoCloudSync = isChecked;
+        await db.settings.put({ key: 'autoCloudSync', value: String(isChecked) });
+        utils.showNotification('Auto cloud sync setting saved', 'success');
     },
 
     updateBankFeeSetting: async (val) => {

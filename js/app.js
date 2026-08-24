@@ -12,6 +12,7 @@ window.app = {
     transactionCount: 0, // Counter for auto-backup
     autoBackupInterval: 10, // Default interval
     lastGhostTime: 0,
+    autoCloudSync: false, // Default cloud sync off
 
 
     init: async () => {
@@ -140,6 +141,11 @@ window.app = {
                 app.qrFeeThreshold = parseFloat(qrThreshold.value);
             } else {
                 app.qrFeeThreshold = 5000; // default to 5000
+            }
+
+            const autoCloud = await db.settings.get('autoCloudSync');
+            if (autoCloud) {
+                app.autoCloudSync = autoCloud.value === 'true';
             }
         } catch (err) {
             console.error('Error loading settings:', err);
@@ -441,7 +447,15 @@ window.app = {
         const shouldDownloadCsvs = confirm('📊 DAILY REPORTS\n\nWould you like to download Today\'s CSV Reports (Sales, Stock-in, Inventory, Purchases, Expenses) before turning off?');
         if (shouldDownloadCsvs && window.views && views.downloadDailyCSVs) {
             await views.downloadDailyCSVs();
-           // --- Automatic Cloud Sync on Shutdown Disabled per User Request ---
+        }
+
+        if (app.autoCloudSync && window.cloudSync) {
+            if (statusText) statusText.innerText = 'Syncing data to cloud...';
+            try {
+                await cloudSync.uploadAll(true);
+            } catch (err) {
+                console.error('Auto cloud sync failed:', err);
+            }
         }
 
         // Final shutdown transition
