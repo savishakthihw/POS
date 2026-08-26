@@ -70,6 +70,13 @@ window.cloudSync = {
             return false;
         }
 
+        // ONE-WAY SYNC ENFORCEMENT
+        const syncMode = localStorage.getItem('savi_sync_mode') || 'master';
+        if (syncMode === 'backup') {
+            if (!isSilent) utils.showNotification('Sync Blocked: This device is set as Backup (Download Only) and cannot upload.', 'error');
+            return false;
+        }
+
         if (cloudSync.isSyncing) return;
         cloudSync.isSyncing = true;
         
@@ -136,18 +143,34 @@ window.cloudSync = {
                 let maxIdInThisSync = parseInt(localStorage.getItem(`last_sync_id_${table}`)) || 0;
                 let maxTimeInThisSync = lastSyncTime;
 
+                // Sort data by updatedAt then id to safely save progress mid-sync
+                data.sort((a, b) => {
+                    const tA = a.updatedAt || "1970-01-01T00:00:00.000Z";
+                    const tB = b.updatedAt || "1970-01-01T00:00:00.000Z";
+                    if (tA === tB) return (a.id || 0) - (b.id || 0);
+                    return tA > tB ? 1 : -1;
+                });
+
                 for (let i = 0; i < data.length; i += 500) {
                     const chunk = data.slice(i, i + 500);
                     const batch = cloudDB.batch();
                     
+                    let chunkMaxId = 0;
+                    let chunkMaxTime = "1970-01-01T00:00:00.000Z";
+
+                    if (!isSilent) {
+                        const progressMsg = `Syncing ${table} (${Math.min(i + 500, data.length)} / ${data.length})...`;
+                        updateStatus(progressMsg, 'blue');
+                    }
+
                     chunk.forEach(doc => {
                         if (table === 'settings' && doc.key === 'custom_font') return;
 
                         const docId = cloudSync.getFirebaseDocId(table, doc);
                         
-                        // Update trackable metrics
-                        if (doc.id && !isNaN(doc.id) && doc.id > maxIdInThisSync) maxIdInThisSync = doc.id;
-                        if (doc.updatedAt && doc.updatedAt > maxTimeInThisSync) maxTimeInThisSync = doc.updatedAt;
+                        // Update trackable metrics for this chunk
+                        if (doc.id && !isNaN(doc.id) && doc.id > chunkMaxId) chunkMaxId = doc.id;
+                        if (doc.updatedAt && doc.updatedAt > chunkMaxTime) chunkMaxTime = doc.updatedAt;
 
                         const { sanitized, wasModified } = cloudSync.sanitizeDoc(doc, table, docId);
                         const docRef = cloudDB.collection(table).doc(docId);
@@ -155,13 +178,17 @@ window.cloudSync = {
                     });
 
                     await batch.commit();
+
+                    // Update global maxes and save to localStorage per chunk
+                    if (chunkMaxId > maxIdInThisSync) maxIdInThisSync = chunkMaxId;
+                    if (chunkMaxTime > maxTimeInThisSync) maxTimeInThisSync = chunkMaxTime;
+
+                    localStorage.setItem(lastSyncTimeKey, maxTimeInThisSync);
+                    if (maxIdInThisSync > 0) {
+                        localStorage.setItem(`last_sync_id_${table}`, maxIdInThisSync.toString());
+                    }
                 }
                 
-                // Update markers
-                localStorage.setItem(lastSyncTimeKey, maxTimeInThisSync);
-                if (maxIdInThisSync > 0) {
-                    localStorage.setItem(`last_sync_id_${table}`, maxIdInThisSync.toString());
-                }
                 console.log(`✅ Synced ${table}: ${data.length} records`);
             }
 
@@ -195,6 +222,14 @@ window.cloudSync = {
     // 1.5 Upload from JSON File (Wipes Cloud First)
     uploadFromJSON: async (file) => {
         if (!cloudSync.verifyAccess()) return;
+
+        // ONE-WAY SYNC ENFORCEMENT
+        const syncMode = localStorage.getItem('savi_sync_mode') || 'master';
+        if (syncMode === 'backup') {
+            utils.showNotification('Action Blocked: This device is set as Backup and cannot modify cloud data.', 'error');
+            return false;
+        }
+
         if (!confirm('⚠️ DANGER: This will delete ALL cloud data and replace it with the content of this JSON file. Proceed?')) return;
         
         const reader = new FileReader();
@@ -269,6 +304,14 @@ window.cloudSync = {
     // 2. Download Cloud Data (Requires Password)
     downloadAll: async () => {
         if (!cloudSync.verifyAccess()) return;
+
+        // ONE-WAY SYNC ENFORCEMENT
+        const syncMode = localStorage.getItem('savi_sync_mode') || 'master';
+        if (syncMode === 'master') {
+            if (!confirm('⚠️ DANGER: This device is set as MASTER. Downloading will overwrite your local PC data with Cloud Data.\n\nOnly do this if you are recovering a crashed PC. Are you absolutely sure?')) {
+                return false;
+            }
+        }
         
         // --- NEW: Safety First - Auto Local Backup before Overwriting ---
         if (confirm('⚠️ SAFETY BACKUP\n\nThe system will now download a local backup of your PC data before overwriting it with Cloud data.\n\nPlease save the backup file first, then click OK to proceed with the download.')) {
@@ -324,6 +367,14 @@ window.cloudSync = {
     // 3. Clear All Cloud Data (Requires Password)
     clearCloudData: async () => {
         if (!cloudSync.verifyAccess()) return;
+
+        // ONE-WAY SYNC ENFORCEMENT
+        const syncMode = localStorage.getItem('savi_sync_mode') || 'master';
+        if (syncMode === 'backup') {
+            utils.showNotification('Action Blocked: This device is set as Backup and cannot wipe cloud data.', 'error');
+            return false;
+        }
+
         const confirmClear = confirm('⚠️ CRITICAL WARNING!\n\nThis will permanently delete ALL data from the Cloud (Firebase). This action cannot be undone.\n\nAre you absolutely sure?');
         if (!confirmClear) return;
 

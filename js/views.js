@@ -5236,38 +5236,47 @@ var views = window.views = {
                         <h3 class="text-xl font-bold text-gray-800">Sales History</h3>
                         <p class="text-xs text-gray-500">Track and manage past transactions</p>
                         <div class="mt-2 flex gap-2">
-                            <button onclick="window.salesHistoryView = 'sales'; views.loadSalesTable(document.getElementById('sales-search-input').value, document.getElementById('sales-search-month').value); this.classList.add('bg-indigo-600','text-white'); this.classList.remove('bg-gray-100','text-gray-600'); document.getElementById('tab-quotations').classList.add('bg-gray-100','text-gray-600'); document.getElementById('tab-quotations').classList.remove('bg-indigo-600','text-white');" id="tab-sales" class="px-4 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 text-white transition-colors">Sales</button>
-                            <button onclick="window.salesHistoryView = 'quotations'; views.loadSalesTable(document.getElementById('sales-search-input').value, document.getElementById('sales-search-month').value); this.classList.add('bg-indigo-600','text-white'); this.classList.remove('bg-gray-100','text-gray-600'); document.getElementById('tab-sales').classList.add('bg-gray-100','text-gray-600'); document.getElementById('tab-sales').classList.remove('bg-indigo-600','text-white');" id="tab-quotations" class="px-4 py-1.5 text-xs font-bold rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Quotations</button>
+                            <button onclick="window.salesHistoryView = 'sales'; views.loadSalesTable(document.getElementById('sales-search-input').value, document.getElementById('sales-search-month').value, document.getElementById('sales-search-date')?.value); this.classList.add('bg-indigo-600','text-white'); this.classList.remove('bg-gray-100','text-gray-600'); document.getElementById('tab-quotations').classList.add('bg-gray-100','text-gray-600'); document.getElementById('tab-quotations').classList.remove('bg-indigo-600','text-white');" id="tab-sales" class="px-4 py-1.5 text-xs font-bold rounded-lg bg-indigo-600 text-white transition-colors">Sales</button>
+                            <button onclick="window.salesHistoryView = 'quotations'; views.loadSalesTable(document.getElementById('sales-search-input').value, document.getElementById('sales-search-month').value, document.getElementById('sales-search-date')?.value); this.classList.add('bg-indigo-600','text-white'); this.classList.remove('bg-gray-100','text-gray-600'); document.getElementById('tab-sales').classList.add('bg-gray-100','text-gray-600'); document.getElementById('tab-sales').classList.remove('bg-indigo-600','text-white');" id="tab-quotations" class="px-4 py-1.5 text-xs font-bold rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">Quotations</button>
                         </div>
                     </div>
 
-                    <!-- Search Box -->
-                    <div class="flex-1 max-w-md mx-6 relative">
-                        <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <input 
-                            type="text" 
-                            id="sales-search-input" 
-                            placeholder="Search by Bill No, Item Name or ID..." 
-                            class="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
-                            oninput="views.loadSalesTable(this.value, document.getElementById('sales-search-month').value)"
-                        >
-                    </div>
-                     <div class="relative w-48">
-                        <i class="fa-solid fa-calendar-days absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <input 
-                            type="month" 
-                            id="sales-search-month" 
-                            class="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
-                            onchange="views.loadSalesTable(document.getElementById('sales-search-input').value, this.value)"
-                        >
+                    <!-- Filters Container -->
+                    <div class="flex items-center gap-4 flex-1 justify-end mr-6">
+                        <!-- Search Box -->
+                        <div class="w-80 relative">
+                            <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input 
+                                type="text" 
+                                id="sales-search-input" 
+                                placeholder="Search by Bill No, Item Name or ID..." 
+                                class="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                                oninput="clearTimeout(window.salesSearchTimeout); window.salesSearchTimeout = setTimeout(() => { views.loadSalesTable(this.value, document.getElementById('sales-search-month').value, document.getElementById('sales-search-date')?.value) }, 300)"
+                            >
+                        </div>
+                        <div class="relative w-40">
+                            <i class="fa-solid fa-calendar-day absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input 
+                                type="date" 
+                                id="sales-search-date" 
+                                class="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                                onchange="document.getElementById('sales-search-month').value=''; views.loadSalesTable(document.getElementById('sales-search-input').value, '', this.value)"
+                            >
+                        </div>
+                        <div class="relative w-40">
+                            <i class="fa-solid fa-calendar-days absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                            <input 
+                                type="month" 
+                                id="sales-search-month" 
+                                class="w-full pl-11 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                                onchange="document.getElementById('sales-search-date').value=''; views.loadSalesTable(document.getElementById('sales-search-input').value, this.value, '')"
+                            >
+                        </div>
                     </div>
 
                     <div class="flex gap-3">
                         <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.exportToPDF('sales-history-table', 'Sales History Report')); } else { views.exportToPDF('sales-history-table', 'Sales History Report'); }" class="flex items-center gap-2 px-4 py-2 bg-indigo-500 text-white rounded-xl hover:bg-indigo-600 transition-all text-sm font-semibold shadow-sm">
                             <i class="fa-solid fa-file-pdf"></i> PDF
-                        </button>
-                        <button onclick="views.reprintBillByNumber()" class="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-all text-sm font-semibold border border-emerald-100">
-                            <i class="fa-solid fa-print"></i> Reprint Bill
                         </button>
                         <button onclick="views.exportSalesToCSV()" class="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl hover:bg-blue-100 transition-all text-sm font-semibold border border-blue-100 ${app.isAdmin ? '' : 'hidden'}">
                             <i class="fa-solid fa-file-export"></i> Export
@@ -5309,7 +5318,7 @@ var views = window.views = {
         views.loadSalesTable();
     },
 
-    loadSalesTable: async (query = '', searchMonth = '') => {
+    loadSalesTable: async (query = '', searchMonth = '', searchDate = '') => {
         const tbody = document.getElementById('sales-table-body');
         if (!tbody) return;
 
@@ -5318,15 +5327,21 @@ var views = window.views = {
         const targetStore = window.salesHistoryView === 'quotations' ? db.quotations : db.sales;
 
         // Optimized Data Fetching: Use Dexie Collection filters to search entire DB without memory issues
-        if (searchMonth && !query) {
+        if (searchDate && !query) {
+            sales = await targetStore.where('date').startsWith(searchDate).reverse().toArray();
+        } else if (searchMonth && !query) {
             // Only month provided
             sales = await targetStore.where('date').startsWith(searchMonth).reverse().toArray();
         } else if (query) {
             const q = query.toLowerCase();
-            // Search query provided (with or without month). Filter via cursor to search entire history safely.
+            // Search query provided (with or without month/date). Filter via cursor to search entire history safely.
             sales = await targetStore.orderBy('date').reverse().filter(s => {
+                // If date is provided, check date first
+                if (searchDate) {
+                    if (!s.date || !s.date.startsWith(searchDate)) return false;
+                }
                 // If month is provided, check month first
-                if (searchMonth) {
+                else if (searchMonth) {
                     if (!s.date) return false;
                     let matchesMonth = s.date.startsWith(searchMonth);
                     if (!matchesMonth) {
@@ -5339,8 +5354,7 @@ var views = window.views = {
                 return String(s.billNo).toLowerCase().includes(q) ||
                     String(s.itemId).toLowerCase().includes(q) ||
                     String(s.supplierId || '').toLowerCase().includes(q) ||
-                    (s.itemName && s.itemName.toLowerCase().includes(q)) ||
-                    (String(s.date).includes(q) || utils.formatDate(s.date).includes(q));
+                    (s.itemName && s.itemName.toLowerCase().includes(q));
             }).toArray();
         } else {
             // Default view: Latest 1000
@@ -5352,7 +5366,7 @@ var views = window.views = {
         const totalProfitVal = sales.filter(s => s.paymentStatus !== 'Cancelled').reduce((sum, s) => sum + (s.profit || 0), 0);
         const totalBankFeeVal = sales.filter(s => s.paymentStatus !== 'Cancelled').reduce((sum, s) => sum + (s.bankFee || 0), 0);
 
-        const isFiltered = query || searchMonth;
+        const isFiltered = query || searchMonth || searchDate;
         if (!isFiltered) {
             sales = sales.slice(0, 50);
         }
@@ -7206,16 +7220,25 @@ var views = window.views = {
                             <p class="text-xs text-gray-500">Sync data between PC and Web POS</p>
                         </div>
                     </div>
-                    
-                    <div class="flex items-center gap-3">
-                        <div class="text-right">
-                            <h4 class="font-bold text-gray-800 text-sm">Auto Cloud Sync</h4>
-                            <p class="text-[10px] text-gray-500">Sync on system shutdown</p>
+                    <div class="flex items-center gap-6">
+                        <div class="flex flex-col items-end">
+                            <h4 class="font-bold text-gray-800 text-sm">Device Role</h4>
+                            <select id="setting-sync-role" onchange="localStorage.setItem('savi_sync_mode', this.value); utils.showNotification('Device Role Updated', 'info');" class="mt-1 bg-white border border-gray-300 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                <option value="master" ${localStorage.getItem('savi_sync_mode') !== 'backup' ? 'selected' : ''}>Master (PC - Upload Only)</option>
+                                <option value="backup" ${localStorage.getItem('savi_sync_mode') === 'backup' ? 'selected' : ''}>Backup (Web - Download Only)</option>
+                            </select>
                         </div>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="setting-auto-cloud-sync" class="sr-only peer" ${app.autoCloudSync ? 'checked' : ''} onchange="views.updateAutoCloudSyncSetting(this.checked)">
-                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                        </label>
+                        
+                        <div class="flex items-center gap-3 border-l pl-6">
+                            <div class="text-right">
+                                <h4 class="font-bold text-gray-800 text-sm">Auto Cloud Sync</h4>
+                                <p class="text-[10px] text-gray-500">Sync on system shutdown</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="setting-auto-cloud-sync" class="sr-only peer" ${app.autoCloudSync ? 'checked' : ''} onchange="views.updateAutoCloudSyncSetting(this.checked)">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
                     </div>
                 </div>
 
