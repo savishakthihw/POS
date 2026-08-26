@@ -5484,6 +5484,58 @@ var views = window.views = {
         }
     },
 
+    renderOutstandingPaymentsBody: () => {
+        const tbody = document.getElementById('outstanding-payments-body');
+        if (!tbody) return;
+
+        const monthFilter = (document.getElementById('outstanding-payments-month-filter')?.value || '').trim();
+        const allData = window._pendingSalesRaw || [];
+
+        // Group by billNo
+        const bills = {};
+        allData.forEach(s => {
+            const bNo = s.billNo || 'UNKNOWN';
+            // Month filter: s.date is like "2026-08-26"
+            if (monthFilter && !s.date?.startsWith(monthFilter)) return;
+            if (!bills[bNo]) bills[bNo] = { date: s.date, billNo: bNo, customer: s.customer || 'Unknown', method: s.method, total: 0, paid: (s.paidAmount || 0) };
+            bills[bNo].total += (s.total || 0);
+        });
+
+        const billsArr = Object.values(bills).filter(b => (b.total - b.paid) > 0);
+
+        if (billsArr.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-400 italic">${monthFilter ? 'No outstanding payments for this month.' : 'No outstanding payments!'}</td></tr>`;
+            return;
+        }
+
+        let totalDue = 0;
+        const rowsHTML = billsArr.map(b => {
+            const due = b.total - b.paid;
+            totalDue += due;
+            const methodColor = b.method === 'QR' ? 'bg-orange-100 text-orange-600' : (b.method === 'Mixed' ? 'bg-purple-100 text-purple-600' : 'bg-red-100 text-red-600');
+            return `
+                <tr class="hover:bg-red-50 transition-colors">
+                    <td class="px-2 py-1.5 font-mono text-gray-500 text-[11px]">${new Date(b.date).toLocaleDateString()}</td>
+                    <td class="px-2 py-1.5 font-bold text-gray-800 text-[11px]">${b.billNo}</td>
+                    <td class="px-2 py-1.5 font-bold text-gray-700 text-[11px]">${b.customer}</td>
+                    <td class="px-2 py-1.5 text-[11px]"><span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${methodColor}">${b.method}</span></td>
+                    <td class="px-2 py-1.5 text-right font-bold text-red-600 font-mono text-[11px]">${utils.formatNumber(due)}</td>
+                    <td class="px-2 py-1.5 text-center print:hidden">
+                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.settleBill('${b.billNo}')); } else { views.settleBill('${b.billNo}'); }" class="text-[10px] bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 px-2 py-1 rounded font-bold transition-all border border-emerald-200">Mark Paid</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        tbody.innerHTML = rowsHTML + `
+            <tr class="bg-gray-50 border-t-2 border-gray-200 sticky bottom-0">
+                <td colspan="4" class="px-2 py-2 text-right font-bold uppercase text-gray-800 text-[10px] tracking-wider">${monthFilter ? 'Month Total' : 'Total Summary'}</td>
+                <td class="px-2 py-2 text-right font-black text-red-700 font-mono text-xs">${utils.formatNumber(totalDue)}</td>
+                <td class="px-2 py-2 print:hidden"></td>
+            </tr>
+        `;
+    },
+
     renderOutstandingSettledBody: () => {
         const tbody = document.getElementById('outstanding-settled-body');
         if (!tbody) return;
@@ -7252,8 +7304,8 @@ var views = window.views = {
 
                         <button onclick="cloudSync.uploadAll()" class="group relative overflow-hidden bg-white border-2 border-blue-50 hover:border-blue-300 rounded-2xl p-6 text-left transition-all hover:shadow-lg">
                             <i class="fa-solid fa-cloud-arrow-up text-3xl text-blue-300 group-hover:text-blue-500 mb-4"></i>
-                            <h4 class="font-bold text-gray-800 mb-1">Incremental Cloud Sync</h4>
-                            <p class="text-xs text-gray-500">Fast Sync: Push only new data to Cloud (Recommended).</p>
+                            <h4 class="font-bold text-gray-800 mb-1">Force Cloud Backup</h4>
+                            <p class="text-xs text-gray-500">Wipe cloud and upload all current data to ensure a perfect backup.</p>
                         </button>
 
                         <button onclick="document.getElementById('cloud-json-input').click()" class="group relative overflow-hidden bg-white border-2 border-indigo-50 hover:border-indigo-300 rounded-2xl p-6 text-left transition-all hover:shadow-lg">
@@ -9134,6 +9186,9 @@ var views = window.views = {
                     <h4 class="font-bold text-lg mb-4 text-gray-800 flex justify-between items-center">
                         <span class="flex items-center gap-2 text-sm uppercase tracking-wide"><i class="fa-solid fa-clock text-red-500"></i> Outstanding Payments</span>
                         <div class="flex items-center gap-2 no-print">
+                            <input type="month" id="outstanding-payments-month-filter"
+                                class="border border-gray-200 rounded-lg px-2 py-1 text-[11px] text-gray-600 focus:outline-none focus:ring-1 focus:ring-red-300 bg-gray-50"
+                                onchange="views.renderOutstandingPaymentsBody()">
                             <button onclick="views.exportToPDF('outstanding-payments-table', 'Outstanding Payments')" class="text-[10px] bg-red-50 text-red-600 px-3 py-1 rounded-lg hover:bg-red-100 transition-all flex items-center gap-1">
                                 <i class="fa-solid fa-file-pdf"></i> PDF
                             </button>
@@ -9151,44 +9206,7 @@ var views = window.views = {
                                     <th class="px-2 py-2 text-center print:hidden">Action</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-gray-50">
-                                ${(() => {
-                        if (pendingSalesRaw.length === 0) return '<tr><td colspan="6" class="px-4 py-8 text-center text-gray-400 italic">No outstanding payments!</td></tr>';
-
-                        const bills = {};
-                        pendingSalesRaw.forEach(s => {
-                            const bNo = s.billNo || 'UNKNOWN';
-                            if (!bills[bNo]) bills[bNo] = { date: s.date, billNo: bNo, customer: s.customer || 'Unknown', method: s.method, total: 0, paid: (s.paidAmount || 0) };
-                            bills[bNo].total += (s.total || 0);
-                        });
-
-                        let totalOutstandingDue = 0;
-
-                        const rowsHTML = Object.values(bills).map(b => {
-                            const due = b.total - b.paid;
-                            if (due > 0) totalOutstandingDue += due;
-                            return `
-                                <tr class="hover:bg-red-50 transition-colors">
-                                    <td class="px-2 py-1.5 font-mono text-gray-500 text-[11px]">${new Date(b.date).toLocaleDateString()}</td>
-                                    <td class="px-2 py-1.5 font-bold text-gray-800 text-[11px]">${b.billNo}</td>
-                                    <td class="px-2 py-1.5 font-bold text-gray-700 text-[11px]">${b.customer}</td>
-                                    <td class="px-2 py-1.5 text-[11px]"><span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${b.method === 'QR' ? 'bg-orange-100 text-orange-600' : (b.method === 'Mixed' ? 'bg-purple-100 text-purple-600' : 'bg-red-100 text-red-600')}">${b.method}</span></td>
-                                    <td class="px-2 py-1.5 text-right font-bold text-red-600 font-mono text-[11px]">${utils.formatNumber(due)}</td>
-                                    <td class="px-2 py-1.5 text-center print:hidden">
-                                        <button onclick="if(!app.isAdmin) { app.requestAuth(() => views.settleBill('${b.billNo}')); } else { views.settleBill('${b.billNo}'); }" class="text-[10px] bg-emerald-50 text-emerald-600 hover:bg-emerald-100 hover:text-emerald-700 px-2 py-1 rounded font-bold transition-all border border-emerald-200">Mark Paid</button>
-                                    </td>
-                                </tr>
-                            `;
-                        }).join('');
-
-                        return rowsHTML + `
-                            <tr class="bg-gray-50 border-t-2 border-gray-200 sticky bottom-0">
-                                <td colspan="4" class="px-2 py-2 text-right font-bold uppercase text-gray-800 text-[10px] tracking-wider">Total Summary</td>
-                                <td class="px-2 py-2 text-right font-black text-red-700 font-mono text-xs">${utils.formatNumber(totalOutstandingDue)}</td>
-                                <td class="px-2 py-2 print:hidden"></td>
-                            </tr>
-                        `;
-                    })()}
+                            <tbody id="outstanding-payments-body" class="divide-y divide-gray-50">
                             </tbody>
                         </table>
                     </div>
@@ -9766,6 +9784,8 @@ var views = window.views = {
             if (settledF) settledF.value = currentMonthVal;
             const detailsF = document.getElementById('outstanding-details-month-filter');
             if (detailsF) detailsF.value = currentMonthVal;
+            const paymentsF = document.getElementById('outstanding-payments-month-filter');
+            if (paymentsF) paymentsF.value = '';
             const summaryF = document.getElementById('report-summary-month-filter');
             if (summaryF) summaryF.value = currentMonthVal;
             const paymentF = document.getElementById('report-payment-month-filter');
@@ -9774,6 +9794,7 @@ var views = window.views = {
             app.updateReportSummaryTable(); // Load the small table separately
             app.updateCashInOutSummaryTable(); // Load Cash In/Out summary separately
             app.initReportCharts(); // Load charts separately
+            views.renderOutstandingPaymentsBody(); // Load Outstanding Payments table
             views.renderOutstandingSettledBody(); // Load Outstanding Settled Details table
             views.renderOutstandingDetailsBody(); // Load Outstanding Details table
             

@@ -97,98 +97,53 @@ window.cloudSync = {
         };
 
         try {
-            if (!isSilent) utils.showNotification('Synchronizing with Cloud...', 'info');
-            updateStatus('Synchronizing...', 'blue');
+            if (!isSilent) utils.showNotification('Force Cloud Backup Started (Wiping Old Data)...', 'warning');
+            updateStatus('Wiping Cloud...', 'orange');
             
+            // 1. WIPE CLOUD FIRST
             for (const table of cloudSync.collections) {
-                const lastSyncTimeKey = `last_sync_time_${table}`;
-                const lastSyncTime = localStorage.getItem(lastSyncTimeKey) || "1970-01-01T00:00:00.000Z";
-                
-                let data = [];
-                // Tables that should ALWAYS be fully synced (Small Master Data)
-                const fullSyncTables = ['settings', 'users'];
-                
-                if (fullSyncTables.includes(table)) {
-                    data = await db[table].toArray();
-                } else {
-                    // Incremental: New records OR updated records
-                    // We check for updatedAt > lastSyncTime OR id > lastId (for legacy support)
-                    const lastSyncIdKey = `last_sync_id_${table}`;
-                    const lastId = parseInt(localStorage.getItem(lastSyncIdKey)) || 0;
-
-                    // Fetch records modified since last sync
-                    const updatedRecords = await db[table].where('updatedAt').above(lastSyncTime).toArray();
-                    
-                    // Also fetch new records based on ID (for those without updatedAt yet)
-                    let newRecords = [];
-                    if (db[table].schema.primKey.name === 'id') {
-                        newRecords = await db[table].where('id').above(lastId).toArray();
+                const snapshot = await cloudDB.collection(table).get();
+                if (!snapshot.empty) {
+                    for (let i = 0; i < snapshot.docs.length; i += 500) {
+                        const batch = cloudDB.batch();
+                        snapshot.docs.slice(i, i + 500).forEach(doc => batch.delete(doc.ref));
+                        await batch.commit();
                     }
-                    
-                    // Merge and de-duplicate
-                    const combined = [...updatedRecords, ...newRecords];
-                    const seen = new Set();
-                    data = combined.filter(doc => {
-                        const uniqueKey = cloudSync.getFirebaseDocId(table, doc);
-                        if (seen.has(uniqueKey)) return false;
-                        seen.add(uniqueKey);
-                        return true;
-                    });
                 }
+                localStorage.setItem(`last_sync_id_${table}`, '0');
+                localStorage.setItem(`last_sync_time_${table}`, '1970-01-01T00:00:00.000Z');
+            }
 
+            // 2. UPLOAD EVERYTHING
+            if (!isSilent) utils.showNotification('Uploading New Data...', 'info');
+            updateStatus('Uploading...', 'blue');
+
+            let totalUploaded = 0;
+
+            for (const table of cloudSync.collections) {
+                const data = await db[table].toArray();
                 if (data.length === 0) continue;
 
-                if (!isSilent) utils.showNotification(`Syncing ${table} (${data.length} records)...`, 'info');
-                
-                let maxIdInThisSync = parseInt(localStorage.getItem(`last_sync_id_${table}`)) || 0;
-                let maxTimeInThisSync = lastSyncTime;
-
-                // Sort data by updatedAt then id to safely save progress mid-sync
-                data.sort((a, b) => {
-                    const tA = a.updatedAt || "1970-01-01T00:00:00.000Z";
-                    const tB = b.updatedAt || "1970-01-01T00:00:00.000Z";
-                    if (tA === tB) return (a.id || 0) - (b.id || 0);
-                    return tA > tB ? 1 : -1;
-                });
+                if (!isSilent) utils.showNotification(`Uploading ${table} (${data.length})...`, 'info');
 
                 for (let i = 0; i < data.length; i += 500) {
                     const chunk = data.slice(i, i + 500);
                     const batch = cloudDB.batch();
                     
-                    let chunkMaxId = 0;
-                    let chunkMaxTime = "1970-01-01T00:00:00.000Z";
-
                     if (!isSilent) {
-                        const progressMsg = `Syncing ${table} (${Math.min(i + 500, data.length)} / ${data.length})...`;
-                        updateStatus(progressMsg, 'blue');
+                        updateStatus(`Syncing ${table} (${Math.min(i + 500, data.length)}/${data.length})...`, 'blue');
                     }
 
                     chunk.forEach(doc => {
                         if (table === 'settings' && doc.key === 'custom_font') return;
-
                         const docId = cloudSync.getFirebaseDocId(table, doc);
-                        
-                        // Update trackable metrics for this chunk
-                        if (doc.id && !isNaN(doc.id) && doc.id > chunkMaxId) chunkMaxId = doc.id;
-                        if (doc.updatedAt && doc.updatedAt > chunkMaxTime) chunkMaxTime = doc.updatedAt;
-
-                        const { sanitized, wasModified } = cloudSync.sanitizeDoc(doc, table, docId);
-                        const docRef = cloudDB.collection(table).doc(docId);
-                        batch.set(docRef, sanitized, { merge: true }); 
+                        const { sanitized } = cloudSync.sanitizeDoc(doc, table, docId);
+                        batch.set(cloudDB.collection(table).doc(docId), sanitized);
+                        totalUploaded++;
                     });
 
                     await batch.commit();
-
-                    // Update global maxes and save to localStorage per chunk
-                    if (chunkMaxId > maxIdInThisSync) maxIdInThisSync = chunkMaxId;
-                    if (chunkMaxTime > maxTimeInThisSync) maxTimeInThisSync = chunkMaxTime;
-
-                    localStorage.setItem(lastSyncTimeKey, maxTimeInThisSync);
-                    if (maxIdInThisSync > 0) {
-                        localStorage.setItem(`last_sync_id_${table}`, maxIdInThisSync.toString());
-                    }
                 }
-                
                 console.log(`✅ Synced ${table}: ${data.length} records`);
             }
 
@@ -201,18 +156,18 @@ window.cloudSync = {
 
             
             if (cloudIndicator) {
-                updateStatus('Sync Complete', 'emerald', true);
+                updateStatus('Backup Complete', 'emerald', true);
                 setTimeout(() => {
                     if (cloudIndicator) cloudIndicator.querySelector('span').innerText = `Synced ${fullSyncStr}`;
                 }, 3000);
             }
 
-            if (!isSilent) utils.showNotification('✅ Incremental Sync Successful!', 'success');
+            if (!isSilent) utils.showNotification(`✅ Force Backup Successful! ${totalUploaded} records uploaded.`, 'success');
             return true;
         } catch (err) {
             console.error('Cloud Sync Failed:', err);
-            updateStatus('Sync Failed', 'red');
-            if (!isSilent) utils.showNotification(`❌ Cloud Sync Failed: ${err.message}`, 'error');
+            updateStatus('Backup Failed', 'red');
+            if (!isSilent) utils.showNotification(`❌ Force Backup Failed: ${err.message}`, 'error');
             return false;
         } finally {
             cloudSync.isSyncing = false;
