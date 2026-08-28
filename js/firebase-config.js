@@ -13,7 +13,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const cloudDB = firebase.firestore();
 const auth = firebase.auth();
-const cloudStorage = firebase.storage();
 
 // Enable offline persistence
 cloudDB.enablePersistence().catch((err) => {
