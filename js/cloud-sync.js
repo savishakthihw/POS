@@ -59,7 +59,7 @@ window.cloudSync = {
         return false;
     },
 
-    // 1. Upload Local Data to Firebase (Incremental)
+    // 1. Upload Local Data to Firebase (JSON Backup Method)
     uploadAll: async (isSilent = false) => {
         if (!isSilent && !cloudSync.verifyAccess()) return;
         
@@ -97,63 +97,37 @@ window.cloudSync = {
         };
 
         try {
-            if (!isSilent) utils.showNotification('Force Cloud Backup Started (Wiping Old Data)...', 'warning');
-            updateStatus('Wiping Cloud...', 'orange');
-            
-            // 1. WIPE CLOUD FIRST
-            for (const table of cloudSync.collections) {
-                const snapshot = await cloudDB.collection(table).get();
-                if (!snapshot.empty) {
-                    for (let i = 0; i < snapshot.docs.length; i += 500) {
-                        const batch = cloudDB.batch();
-                        snapshot.docs.slice(i, i + 500).forEach(doc => batch.delete(doc.ref));
-                        await batch.commit();
-                    }
-                }
-                localStorage.setItem(`last_sync_id_${table}`, '0');
-                localStorage.setItem(`last_sync_time_${table}`, '1970-01-01T00:00:00.000Z');
-            }
+            if (!isSilent) utils.showNotification('Force Cloud Backup Started...', 'info');
+            updateStatus('Uploading JSON...', 'blue');
 
-            // 2. UPLOAD EVERYTHING
-            if (!isSilent) utils.showNotification('Uploading New Data...', 'info');
-            updateStatus('Uploading...', 'blue');
-
-            let totalUploaded = 0;
-
+            // Generate JSON payload
+            const backupData = {};
+            let recordCount = 0;
             for (const table of cloudSync.collections) {
                 const data = await db[table].toArray();
-                if (data.length === 0) continue;
-
-                if (!isSilent) utils.showNotification(`Uploading ${table} (${data.length})...`, 'info');
-
-                for (let i = 0; i < data.length; i += 500) {
-                    const chunk = data.slice(i, i + 500);
-                    const batch = cloudDB.batch();
-                    
-                    if (!isSilent) {
-                        updateStatus(`Syncing ${table} (${Math.min(i + 500, data.length)}/${data.length})...`, 'blue');
-                    }
-
-                    chunk.forEach(doc => {
-                        if (table === 'settings' && doc.key === 'custom_font') return;
-                        const docId = cloudSync.getFirebaseDocId(table, doc);
-                        const { sanitized } = cloudSync.sanitizeDoc(doc, table, docId);
-                        batch.set(cloudDB.collection(table).doc(docId), sanitized);
-                        totalUploaded++;
-                    });
-
-                    await batch.commit();
-                }
-                console.log(`✅ Synced ${table}: ${data.length} records`);
+                backupData[table] = data;
+                recordCount += data.length;
             }
 
+            const backupObj = {
+                timestamp: new Date().toISOString(),
+                version: "23",
+                data: backupData
+            };
+            
+            const jsonString = JSON.stringify(backupObj);
+
+            // Upload to Firebase Storage
+            const storageRef = cloudStorage.ref();
+            const backupRef = storageRef.child('backups/pos_backup.json');
+            
+            await backupRef.putString(jsonString);
 
             const now = new Date();
             const dateStr = now.toLocaleDateString([], { month: 'short', day: 'numeric' });
             const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const fullSyncStr = `${dateStr}, ${timeStr}`;
             localStorage.setItem('savi_last_cloud_sync_time', fullSyncStr);
-
             
             if (cloudIndicator) {
                 updateStatus('Backup Complete', 'emerald', true);
@@ -162,12 +136,12 @@ window.cloudSync = {
                 }, 3000);
             }
 
-            if (!isSilent) utils.showNotification(`✅ Force Backup Successful! ${totalUploaded} records uploaded.`, 'success');
+            if (!isSilent) utils.showNotification(`✅ JSON Cloud Backup Successful! ${recordCount} records uploaded.`, 'success');
             return true;
         } catch (err) {
-            console.error('Cloud Sync Failed:', err);
+            console.error('JSON Cloud Backup Failed:', err);
             updateStatus('Backup Failed', 'red');
-            if (!isSilent) utils.showNotification(`❌ Force Backup Failed: ${err.message}`, 'error');
+            if (!isSilent) utils.showNotification(`❌ Cloud Backup Failed: ${err.message}`, 'error');
             return false;
         } finally {
             cloudSync.isSyncing = false;
@@ -279,16 +253,26 @@ window.cloudSync = {
 
         if (cloudSync.isSyncing) return;
         cloudSync.isSyncing = true;
-        utils.showNotification('📥 Initializing Cloud Download...', 'info');
+        utils.showNotification('📥 Initializing Cloud JSON Download...', 'info');
 
         try {
+            // Fetch from Firebase Storage
+            const storageRef = cloudStorage.ref();
+            const backupRef = storageRef.child('backups/pos_backup.json');
+            const url = await backupRef.getDownloadURL();
+            
+            const response = await fetch(url);
+            const backupObj = await response.json();
+            
+            if (!backupObj || !backupObj.data) throw new Error("Invalid backup format");
+            
+            utils.showNotification(`📥 Restoring data from JSON...`, 'warning');
+            
+            const cloudDataRoot = backupObj.data;
+
             for (const table of cloudSync.collections) {
-                utils.showNotification(`📥 Downloading ${table}...`, 'info');
-                const snapshot = await cloudDB.collection(table).get();
-                
-                if (!snapshot.empty) {
-                    const cloudData = snapshot.docs.map(doc => doc.data());
-                    
+                const cloudData = cloudDataRoot[table] || [];
+                if (cloudData.length > 0) {
                     // Special handling for settings to preserve local-only font
                     if (table === 'settings') {
                         const localFont = await db.settings.get('custom_font');
@@ -300,11 +284,8 @@ window.cloudSync = {
                         await db[table].bulkAdd(cloudData);
                     }
                 }
-                // Reset sync markers after full download to ensure next incremental sync starts fresh
-                localStorage.setItem(`last_sync_id_${table}`, '0');
-                localStorage.setItem(`last_sync_time_${table}`, '1970-01-01T00:00:00.000Z');
             }
-            utils.showNotification('✅ Cloud Download Successful!', 'success');
+            utils.showNotification('✅ JSON Cloud Restore Successful!', 'success');
             
             // Reload page to reflect changes
             setTimeout(() => {
@@ -312,8 +293,8 @@ window.cloudSync = {
             }, 1500);
 
         } catch (err) {
-            console.error('Cloud Download Failed:', err);
-            utils.showNotification(`❌ Cloud Download Failed: ${err.message}`, 'error');
+            console.error('Cloud JSON Restore Failed:', err);
+            utils.showNotification(`❌ Cloud Restore Failed: ${err.message}`, 'error');
         } finally {
             cloudSync.isSyncing = false;
         }
@@ -330,36 +311,25 @@ window.cloudSync = {
             return false;
         }
 
-        const confirmClear = confirm('⚠️ CRITICAL WARNING!\n\nThis will permanently delete ALL data from the Cloud (Firebase). This action cannot be undone.\n\nAre you absolutely sure?');
+        const confirmClear = confirm('⚠️ CRITICAL WARNING!\n\nThis will permanently delete the JSON backup from the Cloud. This action cannot be undone.\n\nAre you absolutely sure?');
         if (!confirmClear) return;
 
         if (cloudSync.isSyncing) return;
         cloudSync.isSyncing = true;
-        utils.showNotification('🔥 Initializing Cloud Wipe...', 'info');
+        utils.showNotification('🔥 Deleting Cloud Backup...', 'info');
 
         try {
-            for (const table of cloudSync.collections) {
-                utils.showNotification(`🔥 Wiping ${table} from cloud...`, 'info');
-                const snapshot = await cloudDB.collection(table).get();
-                
-                if (!snapshot.empty) {
-                    // Chunk deletes in batches of 500
-                    for (let i = 0; i < snapshot.docs.length; i += 500) {
-                        const batch = cloudDB.batch();
-                        const chunk = snapshot.docs.slice(i, i + 500);
-                        chunk.forEach(doc => batch.delete(doc.ref));
-                        await batch.commit();
-                    }
-                    console.log(`🔥 Wiped ${table}`);
-                }
-                // Reset local sync markers for this table since cloud is now empty
-                localStorage.setItem(`last_sync_id_${table}`, '0');
-                localStorage.setItem(`last_sync_time_${table}`, '1970-01-01T00:00:00.000Z');
-            }
+            const storageRef = cloudStorage.ref();
+            const backupRef = storageRef.child('backups/pos_backup.json');
+            await backupRef.delete();
             utils.showNotification('✅ Cloud Data Successfully Wiped!', 'success');
         } catch (err) {
             console.error('Cloud Wipe Failed:', err);
-            utils.showNotification(`❌ Cloud Wipe Failed: ${err.message}`, 'error');
+            if (err.code === 'storage/object-not-found') {
+                utils.showNotification('Cloud is already empty.', 'info');
+            } else {
+                utils.showNotification(`❌ Cloud Wipe Failed: ${err.message}`, 'error');
+            }
         } finally {
             cloudSync.isSyncing = false;
         }
