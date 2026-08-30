@@ -8510,6 +8510,13 @@ var views = window.views = {
                             <tbody id="expenses-table-body">
                                 <tr><td colspan="7" class="text-center py-10 text-gray-400">Loading expenses...</td></tr>
                             </tbody>
+                            <tfoot id="expenses-table-foot">
+                                <tr class="bg-orange-50 border-t-2 border-orange-200">
+                                    <td colspan="5" class="px-3 py-4 font-black text-gray-700 uppercase text-xs tracking-wider text-right">Total Expenses</td>
+                                    <td class="px-3 py-4 text-right font-black text-orange-600 font-mono text-sm" id="expenses-total-cell">Rs. 0.00</td>
+                                    <td class="px-3 py-4"></td>
+                                </tr>
+                            </tfoot>
                         </table>
                      </div>
                 </div>
@@ -8625,6 +8632,8 @@ var views = window.views = {
 
         if (expenses.length === 0) {
             tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-gray-400">No expenses recorded.</td></tr>`;
+            const totalCell = document.getElementById('expenses-total-cell');
+            if (totalCell) totalCell.textContent = utils.formatCurrency(0);
             return;
         }
 
@@ -8644,6 +8653,11 @@ var views = window.views = {
             </td>
         </tr>
         `).join('');
+
+        // Update total row
+        const grandTotal = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+        const totalCell = document.getElementById('expenses-total-cell');
+        if (totalCell) totalCell.textContent = utils.formatCurrency(grandTotal);
     },
 
     deleteExpense: async (id) => {
